@@ -131,7 +131,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     <div class="mid" id="bookTitle"></div>
     <div class="r"><button id="tocBtn">contents</button><button id="setBtn">aa</button></div>
   </div>
-  <iframe id="frame" sandbox="allow-same-origin" title="book"></iframe>
+  <iframe id="frame" sandbox="allow-same-origin allow-scripts" title="book"></iframe>
   <div id="gesture"></div>
   <div id="foot"><span id="chap"></span><span id="pct"></span></div>
   <button id="backpill" hidden>back to where you were</button>
@@ -479,9 +479,16 @@ async function rewrite(doc, path){
   const dir = dirOf(path), jobs = [];
   const urlFor = async href => {
     if (!href || /^(https?:|data:|blob:|#)/i.test(href)) return null;
-    return R.book.url(resolvePath(dir, href));
+    try { return await R.book.url(resolvePath(dir, href)); } catch (e) { return null; }
   };
-  doc.querySelectorAll('script,link,style,iframe,object,embed,meta,base,audio,video').forEach(n => n.remove());
+  doc.querySelectorAll('script,link,style,iframe,object,embed,meta,base,audio,video,form,frame,frameset').forEach(n => n.remove());
+  doc.querySelectorAll('*').forEach(n => {
+    for (const at of [...n.attributes]){
+      const k = at.name.toLowerCase();
+      if (k.startsWith('on') || k === 'srcdoc' || k === 'formaction') n.removeAttribute(at.name);
+      else if ((k === 'href' || k === 'xlink:href' || k === 'src') && /^\s*(javascript|vbscript):/i.test(at.value)) n.removeAttribute(at.name);
+    }
+  });
   doc.querySelectorAll('img').forEach(img => {
     jobs.push(urlFor(img.getAttribute('src')).then(u => { if (u) img.setAttribute('src', u); img.removeAttribute('srcset'); img.removeAttribute('loading'); }));
   });
@@ -861,6 +868,15 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' || e.key === ' '){ e.preventDefault(); next(); }
   else if (e.key === 'ArrowLeft'){ e.preventDefault(); prev(); }
 });
+let lastTop = -1;
+setInterval(() => {
+  if (!R.doc || !R.book || S.layout !== 'scroll' || $('#reader').hidden) return;
+  try {
+    const se = R.doc.scrollingElement || R.doc.documentElement;
+    if (se.scrollTop !== lastTop){ lastTop = se.scrollTop; scrollUpdate(); }
+    extend();
+  } catch (e) {}
+}, 250);
 let rz;
 addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (R.doc) applyLayout(); }, 150); });
 addEventListener('orientationchange', () => { clearTimeout(rz); rz = setTimeout(() => { if (R.doc) applyLayout(); }, 350); });
