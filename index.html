@@ -64,6 +64,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 #foot span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #gesture{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(30px + env(safe-area-inset-bottom));z-index:3;touch-action:none;-webkit-user-select:none;user-select:none}
 #reader[data-layout=scroll] #gesture{display:none}
+#reader[data-layout=scroll].show #gesture{display:block}
 .chrome{position:absolute;left:0;right:0;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
   transition:transform .22s ease;z-index:5}
 #top{top:0;padding:calc(env(safe-area-inset-top) + 8px) 18px 12px;transform:translateY(-100%);
@@ -490,18 +491,31 @@ async function rewrite(doc, path){
   });
   await Promise.all(jobs);
 }
-async function loadChapter(i, target){
-  const tok = ++R.token;
-  R.i = i; R.target = target || {frac: 0};
+async function chapterHtml(i){
   const item = R.book.spine[i];
   let html;
   try { html = await R.book.zip.text(item.path); } catch (e) { html = '<p>This section could not be read.</p>'; }
   const doc = new DOMParser().parseFromString(html, 'text/html');
   await rewrite(doc, item.path);
+  const lang = (doc.documentElement.getAttribute('lang') || doc.documentElement.getAttribute('xml:lang') || 'en').replace(/[^a-zA-Z-]/g, '');
+  return {body: doc.body ? doc.body.innerHTML : '', lang};
+}
+const section = (i, body) => `<section class="a-ch" data-i="${i}">${body}</section>`;
+function preload(html){
+  const urls = [...new Set(html.match(/blob:[^"'\s)]+/g) || [])];
+  return Promise.race([
+    Promise.all(urls.map(u => new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = u; }))),
+    new Promise(r => setTimeout(r, 900))
+  ]);
+}
+async function loadChapter(i, target){
+  const tok = ++R.token;
+  R.i = i; R.lo = R.hi = i; R.target = target || {frac: 0};
+  const ch = await chapterHtml(i);
   if (tok !== R.token) return;
-  const lang = (doc.documentElement.getAttribute('lang') || doc.documentElement.getAttribute('xml:lang') || R.meta.lang || 'en').replace(/[^a-zA-Z-]/g, '');
+  R.docLayout = S.layout;
   frame.style.opacity = 0;
-  frame.srcdoc = `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="a-css"></style></head><body><div id="a-start">previous chapter</div><div id="a-wrap">${doc.body ? doc.body.innerHTML : ''}</div><div id="a-end">next chapter</div></body></html>`;
+  frame.srcdoc = `<!doctype html><html lang="${ch.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="a-css"></style></head><body><div id="a-wrap">${section(i, ch.body)}</div></body></html>`;
 }
 frame.addEventListener('load', async () => {
   const d = frame.contentDocument;
@@ -509,13 +523,12 @@ frame.addEventListener('load', async () => {
   const tok = R.token;
   R.doc = d; R.wrap = d.getElementById('a-wrap');
   bindDoc(d);
-  applyLayout(true);
   const imgs = [...d.images].filter(im => !im.complete);
   if (imgs.length){
     await Promise.race([Promise.all(imgs.map(im => new Promise(r => { im.onload = im.onerror = r; }))), new Promise(r => setTimeout(r, 1500))]);
     if (tok !== R.token) return;
-    applyLayout(true);
   }
+  applyLayout(true);
   frame.style.opacity = 1;
 });
 
@@ -550,14 +563,14 @@ function docCss(){
   body{position:relative}
   #a-wrap{position:absolute;left:${px}px;top:${py}px;width:${cw}px;height:${h - 2 * py}px;column-width:${cw}px;-webkit-column-width:${cw}px;column-gap:${2 * px}px;-webkit-column-gap:${2 * px}px;column-fill:auto;will-change:transform}
   #a-wrap img,#a-wrap svg{max-height:${h - 2 * py - 6}px;width:auto}
-  #a-wrap > *:first-child{margin-top:0}
-  #a-start,#a-end{display:none}`;
+  #a-wrap > .a-ch > *:first-child{margin-top:0}`;
   } else {
     c += `
   html{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
   #a-wrap{padding:${py + 6}px ${px}px ${py}px}
   #a-wrap img,#a-wrap svg{max-height:92vh;width:auto}
-  #a-start,#a-end{display:block;text-align:center;color:${t.dim};padding:30px 0 44px;font:15px ${sans}}`;
+  .a-ch + .a-ch{margin-top:2.4em;padding-top:2.4em;border-top:1px solid ${t.dim}55}
+  #a-endmark{text-align:center;color:${t.dim};padding:34px 0 50px;font:15px ${sans}}`;
   }
   return c;
 }
@@ -565,21 +578,22 @@ function applyLayout(initial){
   const d = R.doc; if (!d || !R.wrap) return;
   const w = frame.clientWidth, h = frame.clientHeight;
   if (!w || !h) return;
+  if (!initial && R.docLayout !== S.layout){ loadChapter(R.i, {frac: R.frac}); return; }
   const keep = initial ? R.target : {frac: R.frac};
   R.geo = {w, h, px: Math.round(Math.max(22, Math.min(44, w * 0.075))), py: Math.round(Math.max(18, h * 0.035))};
   $('#reader').dataset.layout = S.layout;
   R.wrap.style.transform = ''; R.wrap.style.transition = '';
   d.getElementById('a-css').textContent = docCss();
-  const last = R.i >= R.book.spine.length - 1;
-  d.getElementById('a-end').textContent = last ? 'the end' : 'next chapter';
-  d.getElementById('a-start').style.visibility = R.i === 0 ? 'hidden' : 'visible';
   void d.body.offsetHeight;
   place(keep || {frac: 0});
+  if (S.layout === 'scroll') extend();
 }
-function findFrag(f){
+function findFrag(f, idx){
   if (f === undefined || f === '') return null;
   let id = f; try { id = decodeURIComponent(f); } catch (e) {}
-  return R.doc.getElementById(id) || R.doc.getElementsByName(id)[0] || null;
+  const root = R.doc.querySelector('.a-ch[data-i="' + (idx === undefined ? R.i : idx) + '"]') || R.doc;
+  const esc = id.replace(/["\\]/g, '\\$&');
+  return root.querySelector('[id="' + esc + '"]') || root.querySelector('[name="' + esc + '"]');
 }
 function place(target, animate){
   const d = R.doc; if (!d) return;
@@ -598,14 +612,20 @@ function place(target, animate){
     gotoPage(p, !!animate);
   } else {
     const se = d.scrollingElement || d.documentElement;
+    const sec = d.querySelector('.a-ch[data-i="' + R.i + '"]');
+    if (!sec) return;
+    const top = sec.getBoundingClientRect().top + se.scrollTop;
     const el = target.frag !== undefined ? findFrag(target.frag) : null;
-    if (el) el.scrollIntoView();
-    else {
-      const max = Math.max(0, se.scrollHeight - se.clientHeight);
-      se.scrollTop = (target.end ? 1 : (target.frac || 0)) * max;
-    }
+    if (el) se.scrollTop = el.getBoundingClientRect().top + se.scrollTop - 12;
+    else if (target.end) se.scrollTop = top + sec.offsetHeight - se.clientHeight;
+    else se.scrollTop = top + (target.frac || 0) * sec.offsetHeight;
     scrollUpdate();
   }
+}
+function gotoChapter(idx, target, animate){
+  if (R.doc && S.layout === 'scroll' && R.doc.querySelector('.a-ch[data-i="' + idx + '"]')){ R.i = idx; place(target, animate); }
+  else if (R.doc && S.layout === 'pages' && idx === R.i) place(target, animate);
+  else loadChapter(idx, target);
 }
 function gotoPage(p, animate = true){
   p = Math.max(0, Math.min(R.pages - 1, p)); R.page = p;
@@ -615,12 +635,50 @@ function gotoPage(p, animate = true){
   progress();
 }
 function scrollUpdate(){
-  const se = R.doc.scrollingElement || R.doc.documentElement;
-  const max = se.scrollHeight - se.clientHeight;
-  R.frac = max > 0 ? Math.min(1, se.scrollTop / max) : 0;
+  const d = R.doc; if (!d) return;
+  const se = d.scrollingElement || d.documentElement;
+  const secs = [...d.querySelectorAll('.a-ch')];
+  if (!secs.length) return;
+  const probe = se.scrollTop + se.clientHeight * 0.25;
+  let cur = secs[0], curTop = 0;
+  for (const sc of secs){
+    const top = sc.getBoundingClientRect().top + se.scrollTop;
+    if (top <= probe){ cur = sc; curTop = top; } else break;
+  }
+  R.i = Number(cur.dataset.i);
+  const atEnd = se.scrollTop + se.clientHeight >= se.scrollHeight - 2 && R.i === R.book.spine.length - 1;
+  R.frac = atEnd ? 1 : Math.max(0, Math.min(1, (se.scrollTop - curTop) / Math.max(1, cur.offsetHeight)));
   progress();
 }
-let scrollTimer;
+let extending = false;
+async function extend(){
+  const d = R.doc;
+  if (extending || S.layout !== 'scroll' || !d || !R.book) return;
+  const tok = R.token, se = d.scrollingElement || d.documentElement, wrap = R.wrap, n = R.book.spine.length;
+  extending = true;
+  let again = false;
+  try {
+    if (R.hi < n - 1 && se.scrollTop + se.clientHeight * 3 > se.scrollHeight){
+      const ch = await chapterHtml(R.hi + 1);
+      if (tok !== R.token || R.doc !== d) return;
+      wrap.insertAdjacentHTML('beforeend', section(R.hi + 1, ch.body));
+      R.hi++;
+      if (R.hi === n - 1) wrap.insertAdjacentHTML('beforeend', '<div id="a-endmark">the end</div>');
+      again = true;
+    } else if (R.lo > 0 && se.scrollTop < se.clientHeight * 2){
+      const ch = await chapterHtml(R.lo - 1);
+      if (tok !== R.token || R.doc !== d) return;
+      await preload(ch.body);
+      if (tok !== R.token || R.doc !== d) return;
+      const h0 = se.scrollHeight;
+      wrap.insertAdjacentHTML('afterbegin', section(R.lo - 1, ch.body));
+      se.scrollTop += se.scrollHeight - h0;
+      R.lo--;
+      again = true;
+    }
+  } finally { extending = false; }
+  if (again) setTimeout(extend, 0);
+}
 const next = () => {
   if (S.layout !== 'pages') return;
   if (R.page < R.pages - 1) gotoPage(R.page + 1); else nextChapter();
@@ -633,7 +691,6 @@ const prev = () => {
 function nextChapter(){
   if (R.i < R.book.spine.length - 1) loadChapter(R.i + 1, {frac: 0}); else toast('the end');
 }
-function prevChapter(){ if (R.i > 0) loadChapter(R.i - 1, {frac: 0}); }
 
 function chapterLabel(){
   let label = '';
@@ -678,7 +735,7 @@ function followLink(href){
   R.back.push({i: R.i, frac: R.frac});
   $('#backpill').hidden = false;
   const target = frag ? {frag} : {frac: 0};
-  if (idx === R.i && R.doc) place(target, true); else loadChapter(idx, target);
+  gotoChapter(idx, target, true);
 }
 function bindDoc(d){
   let sx = 0, sy = 0;
@@ -696,15 +753,13 @@ function bindDoc(d){
     const sel = d.getSelection && d.getSelection().toString();
     if (sel) return;
     const el = e.target.closest ? e.target : e.target.parentElement;
-    if (el.closest('#a-end')) return nextChapter();
-    if (el.closest('#a-start')) return prevChapter();
     const a = el.closest('a[href]');
     if (a){ e.preventDefault(); followLink(a.getAttribute('href')); return; }
     tap(e.clientX);
   });
   d.addEventListener('scroll', () => {
-    if (S.layout !== 'scroll') return;
-    clearTimeout(scrollTimer); scrollTimer = setTimeout(scrollUpdate, 120);
+    if (S.layout !== 'scroll' || R.raf) return;
+    R.raf = requestAnimationFrame(() => { R.raf = 0; scrollUpdate(); extend(); });
   }, {passive: true});
 }
 
@@ -733,7 +788,7 @@ function buildToc(body){
     b.onclick = () => {
       closeSheet(); setChrome(false);
       const target = e.frag ? {frag: e.frag} : {frac: 0};
-      if (e.idx === R.i && R.doc) place(target); else loadChapter(e.idx, target);
+      gotoChapter(e.idx, target);
     };
     if (n === curIdx) curEl = b;
     body.append(b);
@@ -766,13 +821,14 @@ $('#file').onchange = e => { const f = e.target.files; if (f && f.length) addFil
 $('#editBtn').onclick = () => { editing = !editing; renderLib(); };
 $('#search').oninput = renderLib;
 $('#backBtn').onclick = closeBook;
+$('#foot').onclick = () => setChrome(!$('#reader').classList.contains('show'));
 $('#tocBtn').onclick = () => openSheet('toc');
 $('#setBtn').onclick = () => openSheet('settings');
 $('#sheet').onclick = e => { if (e.target.id === 'sheet') closeSheet(); };
 $('#backpill').onclick = () => {
   const b = R.back.pop(); if (!b) return;
   if (!R.back.length) $('#backpill').hidden = true;
-  if (b.i === R.i && R.doc) place({frac: b.frac}, true); else loadChapter(b.i, {frac: b.frac});
+  gotoChapter(b.i, {frac: b.frac}, true);
 };
 const slider = $('#slider');
 slider.oninput = () => { $('#sl2').textContent = Math.round(slider.value / 10) + '%'; };
@@ -780,7 +836,7 @@ slider.onchange = () => {
   const T = (slider.value / 1000) * R.book.total;
   let i = R.book.spine.findIndex(s => s.start + s.w > T); if (i < 0) i = R.book.spine.length - 1;
   const s = R.book.spine[i], frac = Math.max(0, Math.min(1, (T - s.start) / s.w));
-  if (i === R.i && R.doc) place({frac}); else loadChapter(i, {frac});
+  gotoChapter(i, {frac});
 };
 const gz = $('#gesture');
 let gx = 0, gy = 0, touchTap = 0;
