@@ -76,10 +76,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .chrome{position:absolute;left:0;right:0;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
   transition:transform .22s ease;z-index:5}
 #top{top:0;padding:calc(env(safe-area-inset-top) + 8px) 18px 12px;transform:translateY(-100%);
-  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;font-size:16px;border-bottom:1px solid var(--line)}
-#top .mid{max-width:46vw;font-size:14px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
-#top .r{display:flex;justify-content:flex-end;gap:20px}
-#top .l{text-align:left}
+  display:flex;align-items:center;gap:14px;font-size:15px;border-bottom:1px solid var(--line)}
+#top .mid{flex:1;min-width:0;font-size:13px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+#top .r{display:flex;gap:18px;flex:none}
+#top .l{flex:none;text-align:left}
 #bottom{bottom:0;padding:16px 22px calc(env(safe-area-inset-bottom) + 16px);transform:translateY(100%);border-top:1px solid var(--line)}
 #reader.show .chrome{transform:none}
 #slider{width:100%;-webkit-appearance:none;appearance:none;height:30px;background:transparent;margin:0}
@@ -115,7 +115,13 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .form input:focus{border-color:var(--dim)}
 .btns{display:flex;gap:12px;margin-top:20px}
 .btns button{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);font-size:16px}
+.danger{display:block;width:100%;margin-top:16px;padding:10px;color:#ff6b6b;font-size:15px}
 .btns .primary{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:500}
+
+#lb{position:fixed;inset:0;z-index:40;background:#000;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
+#lbWrap{display:grid;place-items:center;min-width:100%;min-height:100%;width:max-content}
+#lbImg{display:block;max-width:none;-webkit-user-select:none;user-select:none}
+#lbClose{position:fixed;top:calc(env(safe-area-inset-top) + 12px);right:16px;z-index:41;background:rgba(44,44,46,.88);color:#fff;border-radius:18px;padding:8px 16px;font-size:15px}
 
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 28px);z-index:30;
   background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:22px;font-size:14px;max-width:86vw;text-align:center;
@@ -134,7 +140,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     </div>
   </header>
   <input id="search" type="search" placeholder="search" hidden>
-  <p id="hint" hidden>tap a cover to rename it</p>
+  <p id="hint" hidden>tap a cover to rename or delete it</p>
   <main id="shelf"></main>
   <div id="empty" hidden>
     <div class="wm big">nothing here yet.</div>
@@ -148,7 +154,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   <div id="top" class="chrome">
     <button id="backBtn" class="l">library</button>
     <div class="mid" id="bookTitle"></div>
-    <div class="r"><button id="tocBtn">contents</button><button id="setBtn">aa</button></div>
+    <div class="r"><button id="tocBtn">contents</button><button id="setBtn">settings</button></div>
   </div>
   <iframe id="frame" sandbox="allow-same-origin allow-scripts" title="book"></iframe>
   <div id="gesture"></div>
@@ -164,6 +170,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   <div id="panel"><h2 id="sheetTitle"></h2><div id="sheetBody"></div></div>
 </div>
 <div id="toast"></div>
+<div id="lb" hidden><button id="lbClose">done</button><div id="lbWrap"><img id="lbImg" alt=""></div></div>
 
 <script>
 (() => {
@@ -175,7 +182,7 @@ const THEMES = {
   black:    {bg:'#000000', fg:'#d6d6d6', dim:'#7e7e82'},
   graphite: {bg:'#1c1c1e', fg:'#dcdcde', dim:'#8e8e93'}
 };
-let S = {size:19, font:'serif', theme:'black', layout:'pages'};
+let S = {size:19, font:'serif', theme:'black', layout:'pages', margin:'normal', spacing:'normal'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('alcove.settings') || '{}')); } catch (e) {}
 function saveSettings(){ try { localStorage.setItem('alcove.settings', JSON.stringify(S)); } catch (e) {} }
 function applyTheme(){
@@ -415,9 +422,9 @@ function renderLib(){
       const acts = document.createElement('div'); acts.className = 'acts';
       const rn = document.createElement('button'); rn.className = 'rn'; rn.textContent = 'rename';
       rn.onclick = () => openSheet('edit', b);
-      const rm = document.createElement('button'); rm.className = 'rm'; rm.textContent = 'remove';
+      const rm = document.createElement('button'); rm.className = 'rm'; rm.textContent = 'delete';
       rm.onclick = async () => {
-        if (!confirm('Remove "' + b.title + '" from alcove.?')) return;
+        if (!confirm('Delete "' + b.title + '" from alcove.? This removes it from this device.')) return;
         await dbDel('books', b.id); await dbDel('files', b.id); loadLib();
       };
       acts.append(rn, rm); tile.append(acts);
@@ -494,6 +501,7 @@ async function openBook(id){
 async function closeBook(fromPop){
   flushSave();
   closeSheet(true);
+  closeLightbox();
   clearBack();
   setChrome(false);
   R.token++;
@@ -565,6 +573,7 @@ frame.addEventListener('load', async () => {
     await Promise.race([Promise.all(imgs.map(im => new Promise(r => { im.onload = im.onerror = r; }))), new Promise(r => setTimeout(r, 1500))]);
     if (tok !== R.token) return;
   }
+  tagInline(d);
   applyLayout(true);
   frame.style.opacity = 1;
 });
@@ -577,17 +586,18 @@ function docCss(){
   let c = `
   :root{color-scheme:dark}
   html{-webkit-text-size-adjust:100%;background:${t.bg}}
-  body{margin:0;background:${t.bg};color:${t.fg};font:${S.size}px/1.55 ${ff};-webkit-font-smoothing:antialiased}
+  body{margin:0;background:${t.bg};color:${t.fg};font:${S.size}px/${({tight: 1.4, normal: 1.55, loose: 1.8})[S.spacing] || 1.55} ${ff};-webkit-font-smoothing:antialiased}
   #a-wrap{overflow-wrap:break-word;-webkit-hyphens:auto;hyphens:auto}
   #a-wrap *{color:inherit!important;background:none!important;font-family:inherit!important;max-width:100%}
   #a-wrap p{margin:0 0 .85em;text-align:justify;orphans:2;widows:2}
   #a-wrap h1,#a-wrap h2,#a-wrap h3,#a-wrap h4,#a-wrap h5,#a-wrap h6{line-height:1.25;font-weight:600;margin:1.1em 0 .55em;text-align:left;break-after:avoid;-webkit-column-break-after:avoid}
   #a-wrap h1{font-size:1.5em}#a-wrap h2{font-size:1.3em}#a-wrap h3{font-size:1.12em}
   #a-wrap a{color:${t.fg}!important;text-decoration:underline;text-decoration-color:${t.dim};text-underline-offset:3px}
-  #a-wrap img,#a-wrap svg{display:block;margin:.8em auto;height:auto;max-width:100%;break-inside:avoid}
+  #a-wrap img,#a-wrap svg{display:block;margin:.8em auto;height:auto!important;max-width:100%!important;object-fit:contain;break-inside:avoid}
+  #a-wrap img.a-inl{display:inline!important;height:1em!important;width:auto!important;max-height:none!important;margin:0 .1em;vertical-align:-.15em;break-inside:auto}
   #a-wrap blockquote{margin:1em 1.2em}
   #a-wrap pre{white-space:pre-wrap;font-size:.85em}
-  #a-wrap table{border-collapse:collapse;font-size:.9em}
+  #a-wrap table{border-collapse:collapse;font-size:.9em;table-layout:fixed;width:100%;word-break:break-word}
   #a-wrap td,#a-wrap th{padding:.2em .5em;vertical-align:top}
   #a-wrap hr{border:0;border-top:1px solid ${t.dim};margin:1.5em 0}
   #a-wrap sup,#a-wrap sub{line-height:0}
@@ -599,13 +609,13 @@ function docCss(){
   html,body{overflow:hidden;height:100%;touch-action:none}
   body{position:relative}
   #a-wrap{position:absolute;left:${px}px;top:${py}px;width:${cw}px;height:${h - 2 * py}px;column-width:${cw}px;-webkit-column-width:${cw}px;column-gap:${2 * px}px;-webkit-column-gap:${2 * px}px;column-fill:auto;will-change:transform}
-  #a-wrap img,#a-wrap svg{max-height:${h - 2 * py - 6}px;width:auto}
+  #a-wrap img,#a-wrap svg{max-height:${h - 2 * py - 6}px!important;width:auto!important}
   #a-wrap > .a-ch > *:first-child{margin-top:0}`;
   } else {
     c += `
   html{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
   #a-wrap{padding:${py + 6}px ${px}px ${py}px}
-  #a-wrap img,#a-wrap svg{max-height:92vh;width:auto}
+  #a-wrap img,#a-wrap svg{max-height:92vh!important;width:auto!important}
   .a-ch + .a-ch{margin-top:2.4em;padding-top:2.4em;border-top:1px solid ${t.dim}55}
   #a-endmark{text-align:center;color:${t.dim};padding:34px 0 50px;font:15px ${sans}}`;
   }
@@ -617,7 +627,8 @@ function applyLayout(initial){
   if (!w || !h) return;
   if (!initial && R.docLayout !== S.layout){ loadChapter(R.i, {frac: R.frac}); return; }
   const keep = initial ? R.target : {frac: R.frac};
-  R.geo = {w, h, px: Math.round(Math.max(22, Math.min(44, w * 0.075))), py: Math.round(Math.max(18, h * 0.035))};
+  const mf = {narrow: .55, normal: 1, wide: 1.7}[S.margin] || 1;
+  R.geo = {w, h, px: Math.round(Math.max(12, Math.min(w * 0.2, Math.max(22, Math.min(44, w * 0.075)) * mf))), py: Math.round(Math.max(18, h * 0.035))};
   $('#reader').dataset.layout = S.layout;
   R.wrap.style.transform = ''; R.wrap.style.transition = '';
   d.getElementById('a-css').textContent = docCss();
@@ -780,8 +791,16 @@ function followLink(href){
   const target = frag ? {frag} : {frac: 0};
   gotoChapter(idx, target, true);
 }
+function tagInline(d){
+  d.querySelectorAll('img').forEach(im => { if (im.complete && im.naturalHeight && im.naturalHeight <= 48) im.classList.add('a-inl'); });
+}
 function bindDoc(d){
   let sx = 0, sy = 0;
+  tagInline(d);
+  d.addEventListener('load', e => {
+    const t = e.target;
+    if (t && t.tagName === 'IMG' && t.naturalHeight && t.naturalHeight <= 48) t.classList.add('a-inl');
+  }, true);
   d.addEventListener('touchstart', e => { const t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY; }, {passive: true});
   d.addEventListener('touchend', e => {
     if (S.layout !== 'pages') return;
@@ -798,6 +817,8 @@ function bindDoc(d){
     const el = e.target.closest ? e.target : e.target.parentElement;
     const a = el.closest('a[href]');
     if (a){ e.preventDefault(); followLink(a.getAttribute('href')); return; }
+    const url = imageSrc(el);
+    if (url){ openLightbox(url); return; }
     tap(e.clientX);
   });
   d.addEventListener('scroll', () => {
@@ -812,8 +833,8 @@ function openSheet(kind, arg){
   body.replaceChildren(); body.onclick = null;
   s.classList.toggle('top', kind === 'edit');
   if (kind === 'toc'){ $('#sheetTitle').textContent = 'contents'; buildToc(body); }
-  else if (kind === 'edit'){ $('#sheetTitle').textContent = 'rename'; buildEdit(body, arg); }
-  else { $('#sheetTitle').textContent = 'reading'; buildSettings(body); }
+  else if (kind === 'edit'){ $('#sheetTitle').textContent = 'edit details'; buildEdit(body, arg); }
+  else { $('#sheetTitle').textContent = 'settings'; buildSettings(body); }
   s.hidden = false;
   requestAnimationFrame(() => requestAnimationFrame(() => s.classList.add('open')));
 }
@@ -844,7 +865,8 @@ function buildEdit(body, b){
   body.innerHTML = `<div class="form">
     <label for="eTitle">title</label><input id="eTitle" autocomplete="off" autocapitalize="words" enterkeyhint="next">
     <label for="eAuthor">author</label><input id="eAuthor" autocomplete="off" autocapitalize="words" enterkeyhint="done">
-    <div class="btns"><button id="eCancel">cancel</button><button id="eSave" class="primary">save</button></div></div>`;
+    <div class="btns"><button id="eCancel">cancel</button><button id="eSave" class="primary">save</button></div>
+    <button id="eDelete" class="danger">delete book</button></div>`;
   const ti = body.querySelector('#eTitle'), au = body.querySelector('#eAuthor');
   ti.value = b.title; au.value = b.author || '';
   const save = async () => {
@@ -856,6 +878,11 @@ function buildEdit(body, b){
   };
   body.querySelector('#eSave').onclick = save;
   body.querySelector('#eCancel').onclick = () => closeSheet();
+  body.querySelector('#eDelete').onclick = async () => {
+    if (!confirm('Delete "' + b.title + '" from alcove.? This removes it from this device.')) return;
+    try { await dbDel('books', b.id); await dbDel('files', b.id); } catch (e) { toast("couldn't delete that"); return; }
+    closeSheet(); await loadLib();
+  };
   ti.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); au.focus(); } };
   au.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); save(); } };
 }
@@ -864,7 +891,9 @@ function buildSettings(body){
   <div class="row"><span>text size</span><div class="step"><button data-step="-1" aria-label="smaller">A−</button><b id="sv"></b><button data-step="1" aria-label="larger">A+</button></div></div>
   <div class="row"><span>typeface</span><div class="seg" data-key="font"><button data-val="serif">serif</button><button data-val="sans">sans</button></div></div>
   <div class="row"><span>theme</span><div class="seg" data-key="theme"><button data-val="black">black</button><button data-val="graphite">graphite</button></div></div>
-  <div class="row"><span>layout</span><div class="seg" data-key="layout"><button data-val="pages">pages</button><button data-val="scroll">scroll</button></div></div>`;
+  <div class="row"><span>layout</span><div class="seg" data-key="layout"><button data-val="pages">pages</button><button data-val="scroll">scroll</button></div></div>
+  <div class="row"><span>margins</span><div class="seg" data-key="margin"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
+  <div class="row"><span>spacing</span><div class="seg" data-key="spacing"><button data-val="tight">tight</button><button data-val="normal">normal</button><button data-val="loose">loose</button></div></div>`;
   const sync = () => {
     body.querySelector('#sv').textContent = S.size;
     body.querySelectorAll('.seg').forEach(g => g.querySelectorAll('button').forEach(b => b.classList.toggle('on', S[g.dataset.key] === b.dataset.val)));
@@ -906,12 +935,75 @@ slider.onchange = () => {
 };
 const gz = $('#gesture');
 let gx = 0, gy = 0, touchTap = 0;
+function imageSrc(el){
+  if (!el || !el.closest) return null;
+  const im = el.closest('img');
+  if (im){ const r = im.getBoundingClientRect(); return (im.src && r.width >= 60 && r.height >= 60) ? im.src : null; }
+  const sv = el.closest('svg');
+  if (sv){
+    const i = sv.querySelector('image'), r = sv.getBoundingClientRect();
+    const u = i && (i.getAttribute('href') || i.getAttribute('xlink:href'));
+    return (u && r.width >= 60 && r.height >= 60) ? u : null;
+  }
+  return null;
+}
+const lb = $('#lb'), lbImg = $('#lbImg'), lbWrap = $('#lbWrap');
+let lbZ = 1, lbFit = {w: 0, h: 0};
+function lbApply(){ lbImg.style.width = lbFit.w * lbZ + 'px'; lbImg.style.height = lbFit.h * lbZ + 'px'; }
+function lbLayout(){
+  const nw = lbImg.naturalWidth || 1, nh = lbImg.naturalHeight || 1;
+  const fs = Math.min(lb.clientWidth / nw, lb.clientHeight / nh, 2.5);
+  lbFit = {w: nw * fs, h: nh * fs}; lbApply();
+}
+function lbSetZoom(nz, cx, cy){
+  nz = Math.max(1, Math.min(6, nz)); if (nz === lbZ) return;
+  const ux = (lb.scrollLeft + cx) / lbWrap.offsetWidth, uy = (lb.scrollTop + cy) / lbWrap.offsetHeight;
+  lbZ = nz; lbApply();
+  lb.scrollLeft = ux * lbWrap.offsetWidth - cx; lb.scrollTop = uy * lbWrap.offsetHeight - cy;
+}
+function openLightbox(url){
+  R.lastAct = Date.now();
+  lbZ = 1; lbImg.onload = lbLayout; lbImg.src = url;
+  lb.hidden = false; lb.scrollTo(0, 0);
+  if (lbImg.complete && lbImg.naturalWidth) lbLayout();
+}
+function closeLightbox(){ lb.hidden = true; lbImg.removeAttribute('src'); lbImg.style.width = lbImg.style.height = ''; lbZ = 1; }
+$('#lbClose').onclick = closeLightbox;
+{
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  let d0 = 0, z0 = 1, moved = false, st = null, lastTap = 0;
+  lb.addEventListener('touchstart', e => {
+    if (e.touches.length === 2){ d0 = dist(e.touches); z0 = lbZ; moved = true; }
+    else if (e.touches.length === 1){ moved = false; st = {x: e.touches[0].clientX, y: e.touches[0].clientY}; }
+  }, {passive: true});
+  lb.addEventListener('touchmove', e => {
+    if (e.touches.length === 2){
+      e.preventDefault(); moved = true;
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      lbSetZoom(z0 * dist(e.touches) / d0, cx, cy);
+    } else if (st){
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - st.x) > 8 || Math.abs(t.clientY - st.y) > 8) moved = true;
+    }
+  }, {passive: false});
+  lb.addEventListener('touchend', e => {
+    if (e.touches.length > 0 || moved) return;
+    const t = e.changedTouches[0], now = Date.now();
+    if (now - lastTap < 300){ lastTap = 0; lbSetZoom(lbZ > 1.2 ? 1 : 2.5, t.clientX, t.clientY); }
+    else { lastTap = now; setTimeout(() => { if (lastTap === now && lbZ === 1) closeLightbox(); }, 310); }
+  }, {passive: true});
+}
 function tapAt(x, y){
   if (!R.doc) return;
-  const fr = frame.getBoundingClientRect();
-  const el = R.doc.elementFromPoint(x - fr.left, y - fr.top);
-  const a = el && el.closest && el.closest('a[href]');
-  if (a && !$('#reader').classList.contains('show')){ followLink(a.getAttribute('href')); return; }
+  const shown = $('#reader').classList.contains('show');
+  if (!shown){
+    const fr = frame.getBoundingClientRect();
+    const el = R.doc.elementFromPoint(x - fr.left, y - fr.top);
+    const a = el && el.closest && el.closest('a[href]');
+    if (a){ followLink(a.getAttribute('href')); return; }
+    const url = imageSrc(el);
+    if (url && x > R.geo.w * 0.3 && x < R.geo.w * 0.7){ openLightbox(url); return; }
+  }
   tap(x);
 }
 gz.addEventListener('touchstart', e => { const t = e.changedTouches[0]; gx = t.clientX; gy = t.clientY; }, {passive: true});
@@ -924,7 +1016,7 @@ gz.addEventListener('touchend', e => {
 }, {passive: false});
 gz.addEventListener('click', e => { if (Date.now() - touchTap < 700) return; tapAt(e.clientX, e.clientY); });
 addEventListener('keydown', e => {
-  if (e.key === 'Escape'){ if (!$('#sheet').hidden) closeSheet(); else setChrome(false); return; }
+  if (e.key === 'Escape'){ if (!lb.hidden) closeLightbox(); else if (!$('#sheet').hidden) closeSheet(); else setChrome(false); return; }
   if (!R.book || $('#reader').hidden) return;
   if (e.key === 'ArrowRight' || e.key === ' '){ e.preventDefault(); next(); }
   else if (e.key === 'ArrowLeft'){ e.preventDefault(); prev(); }
@@ -943,6 +1035,7 @@ addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if 
 addEventListener('orientationchange', () => { clearTimeout(rz); rz = setTimeout(() => { if (R.doc) applyLayout(); }, 350); });
 addEventListener('popstate', () => {
   if ($('#reader').hidden) return;
+  if (!$('#lb').hidden){ closeLightbox(); try { history.pushState({r: 1}, ''); } catch (e) {} return; }
   if (!$('#sheet').hidden){ closeSheet(); try { history.pushState({r: 1}, ''); } catch (e) {} return; }
   closeBook(true);
 });
