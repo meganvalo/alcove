@@ -59,10 +59,12 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 /* ---------- reader ---------- */
 #reader{display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 #frame{flex:1;width:100%;border:0;display:block;background:var(--bg);opacity:0;transition:opacity .15s}
-#foot{display:flex;justify-content:space-between;gap:16px;height:calc(30px + env(safe-area-inset-bottom));
-  padding:0 24px env(safe-area-inset-bottom);align-items:center;font-size:12px;color:var(--dim)}
-#foot span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#gesture{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(30px + env(safe-area-inset-bottom));z-index:3;touch-action:none;-webkit-user-select:none;user-select:none}
+#foot{display:flex;align-items:center;gap:12px;height:calc(40px + env(safe-area-inset-bottom));
+  padding:0 20px env(safe-area-inset-bottom);font-size:12px;color:var(--dim)}
+#libBtn{flex:none;color:var(--fg);font-size:14px;padding:10px 8px 10px 0}
+#chap{flex:1;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pct{flex:none;min-width:34px;text-align:right}
+#gesture{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(40px + env(safe-area-inset-bottom));z-index:3;touch-action:none;-webkit-user-select:none;user-select:none}
 #reader[data-layout=scroll] #gesture{display:none}
 #reader[data-layout=scroll].show #gesture{display:block}
 .chrome{position:absolute;left:0;right:0;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
@@ -133,7 +135,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   </div>
   <iframe id="frame" sandbox="allow-same-origin allow-scripts" title="book"></iframe>
   <div id="gesture"></div>
-  <div id="foot"><span id="chap"></span><span id="pct"></span></div>
+  <div id="foot"><button id="libBtn">library</button><span id="chap"></span><span id="pct"></span></div>
   <button id="backpill" hidden>back to where you were</button>
   <div id="bottom" class="chrome">
     <input id="slider" type="range" min="0" max="1000" value="0" aria-label="position in book">
@@ -438,6 +440,8 @@ function showView(v){
   $('#reader').hidden = v !== 'reader';
 }
 async function openBook(id){
+  if (R.opening) return;
+  R.opening = true;
   try {
     toast('opening…', true);
     const [meta, file] = await Promise.all([dbGet('books', id), dbGet('files', id)]);
@@ -455,6 +459,7 @@ async function openBook(id){
     $('#reader').classList.remove('show');
     frame.style.opacity = 0;
     showView('reader');
+    if (!(history.state && history.state.r)){ try { history.pushState({r: 1}, ''); } catch (e) {} }
     await new Promise(r => requestAnimationFrame(r));
     const pos = meta.pos || {i: 0, frac: 0};
     await loadChapter(Math.min(pos.i || 0, bk.spine.length - 1), {frac: pos.frac || 0});
@@ -462,16 +467,19 @@ async function openBook(id){
     hideToast();
   } catch (e) {
     console.error(e); showView('lib'); toast("couldn't open this book");
-  }
+  } finally { R.opening = false; }
 }
-async function closeBook(){
+async function closeBook(fromPop){
   flushSave();
   closeSheet(true);
+  clearBack();
+  setChrome(false);
   R.token++;
   frame.removeAttribute('srcdoc');
   R.urls.forEach(URL.revokeObjectURL); R.urls.clear();
   Object.assign(R, {book: null, doc: null, wrap: null});
   showView('lib');
+  if (!fromPop && history.state && history.state.r){ try { history.back(); } catch (e) {} }
   await loadLib();
 }
 
@@ -726,11 +734,16 @@ function flushSave(){
 }
 function setChrome(on){ $('#reader').classList.toggle('show', on); }
 function tap(x){
+  R.lastAct = Date.now();
   if (S.layout === 'pages'){
     const w = R.geo.w;
     if ($('#reader').classList.contains('show')) return setChrome(false);
     if (x < w * 0.3) prev(); else if (x > w * 0.7) next(); else setChrome(true);
   } else setChrome(!$('#reader').classList.contains('show'));
+}
+function clearBack(){
+  R.back = []; clearTimeout(R.pillT);
+  $('#backpill').hidden = true;
 }
 function followLink(href){
   if (/^(https?:|mailto:|tel:)/i.test(href)){ window.open(href, '_blank', 'noopener'); return; }
@@ -741,6 +754,7 @@ function followLink(href){
   if (idx < 0) return;
   R.back.push({i: R.i, frac: R.frac});
   $('#backpill').hidden = false;
+  clearTimeout(R.pillT); R.pillT = setTimeout(clearBack, 9000);
   const target = frag ? {frag} : {frac: 0};
   gotoChapter(idx, target, true);
 }
@@ -756,7 +770,7 @@ function bindDoc(d){
     }
   }, {passive: true});
   d.addEventListener('click', e => {
-    if (Date.now() - R.swipedAt < 400) return;
+    if (Date.now() - R.swipedAt < 400 || Date.now() - (R.lastAct || 0) < 500) return;
     const sel = d.getSelection && d.getSelection().toString();
     if (sel) return;
     const el = e.target.closest ? e.target : e.target.parentElement;
@@ -793,7 +807,7 @@ function buildToc(body){
     const b = document.createElement('button'); b.className = 'toc' + (n === curIdx ? ' cur' : '');
     b.style.paddingLeft = (22 + e.depth * 18) + 'px'; b.textContent = e.label;
     b.onclick = () => {
-      closeSheet(); setChrome(false);
+      closeSheet(); setChrome(false); clearBack();
       const target = e.frag ? {frag: e.frag} : {frac: 0};
       gotoChapter(e.idx, target);
     };
@@ -827,7 +841,8 @@ $('#addBtn').onclick = $('#addBtn2').onclick = () => $('#file').click();
 $('#file').onchange = e => { const f = e.target.files; if (f && f.length) addFiles(f); e.target.value = ''; };
 $('#editBtn').onclick = () => { editing = !editing; renderLib(); };
 $('#search').oninput = renderLib;
-$('#backBtn').onclick = closeBook;
+$('#backBtn').onclick = () => closeBook();
+$('#libBtn').onclick = e => { e.stopPropagation(); closeBook(); };
 $('#foot').onclick = () => setChrome(!$('#reader').classList.contains('show'));
 $('#tocBtn').onclick = () => openSheet('toc');
 $('#setBtn').onclick = () => openSheet('settings');
@@ -843,6 +858,7 @@ slider.onchange = () => {
   const T = (slider.value / 1000) * R.book.total;
   let i = R.book.spine.findIndex(s => s.start + s.w > T); if (i < 0) i = R.book.spine.length - 1;
   const s = R.book.spine[i], frac = Math.max(0, Math.min(1, (T - s.start) / s.w));
+  clearBack();
   gotoChapter(i, {frac});
 };
 const gz = $('#gesture');
@@ -858,12 +874,14 @@ function tapAt(x, y){
 gz.addEventListener('touchstart', e => { const t = e.changedTouches[0]; gx = t.clientX; gy = t.clientY; }, {passive: true});
 gz.addEventListener('touchend', e => {
   const t = e.changedTouches[0], dx = t.clientX - gx, dy = t.clientY - gy;
-  touchTap = Date.now();
+  touchTap = R.lastAct = Date.now();
   if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.4){ setChrome(false); if (dx < 0) next(); else prev(); }
-  else if (Math.abs(dx) < 12 && Math.abs(dy) < 12) tapAt(t.clientX, t.clientY);
-}, {passive: true});
+  else if (Math.abs(dx) < 12 && Math.abs(dy) < 12){ e.preventDefault(); tapAt(t.clientX, t.clientY); }
+  else if (S.layout === 'scroll') setChrome(false);
+}, {passive: false});
 gz.addEventListener('click', e => { if (Date.now() - touchTap < 700) return; tapAt(e.clientX, e.clientY); });
 addEventListener('keydown', e => {
+  if (e.key === 'Escape'){ if (!$('#sheet').hidden) closeSheet(); else setChrome(false); return; }
   if (!R.book || $('#reader').hidden) return;
   if (e.key === 'ArrowRight' || e.key === ' '){ e.preventDefault(); next(); }
   else if (e.key === 'ArrowLeft'){ e.preventDefault(); prev(); }
@@ -880,6 +898,11 @@ setInterval(() => {
 let rz;
 addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (R.doc) applyLayout(); }, 150); });
 addEventListener('orientationchange', () => { clearTimeout(rz); rz = setTimeout(() => { if (R.doc) applyLayout(); }, 350); });
+addEventListener('popstate', () => {
+  if ($('#reader').hidden) return;
+  if (!$('#sheet').hidden){ closeSheet(); try { history.pushState({r: 1}, ''); } catch (e) {} return; }
+  closeBook(true);
+});
 addEventListener('pagehide', flushSave);
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
 
