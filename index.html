@@ -62,6 +62,8 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 #foot{display:flex;justify-content:space-between;gap:16px;height:calc(30px + env(safe-area-inset-bottom));
   padding:0 24px env(safe-area-inset-bottom);align-items:center;font-size:12px;color:var(--dim)}
 #foot span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#gesture{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(30px + env(safe-area-inset-bottom));z-index:3;touch-action:none;-webkit-user-select:none;user-select:none}
+#reader[data-layout=scroll] #gesture{display:none}
 .chrome{position:absolute;left:0;right:0;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
   transition:transform .22s ease;z-index:5}
 #top{top:0;padding:calc(env(safe-area-inset-top) + 8px) 18px 12px;transform:translateY(-100%);
@@ -129,6 +131,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     <div class="r"><button id="tocBtn">contents</button><button id="setBtn">aa</button></div>
   </div>
   <iframe id="frame" sandbox="allow-same-origin" title="book"></iframe>
+  <div id="gesture"></div>
   <div id="foot"><span id="chap"></span><span id="pct"></span></div>
   <button id="backpill" hidden>back to where you were</button>
   <div id="bottom" class="chrome">
@@ -564,6 +567,7 @@ function applyLayout(initial){
   if (!w || !h) return;
   const keep = initial ? R.target : {frac: R.frac};
   R.geo = {w, h, px: Math.round(Math.max(22, Math.min(44, w * 0.075))), py: Math.round(Math.max(18, h * 0.035))};
+  $('#reader').dataset.layout = S.layout;
   R.wrap.style.transform = ''; R.wrap.style.transition = '';
   d.getElementById('a-css').textContent = docCss();
   const last = R.i >= R.book.spine.length - 1;
@@ -778,6 +782,29 @@ slider.onchange = () => {
   const s = R.book.spine[i], frac = Math.max(0, Math.min(1, (T - s.start) / s.w));
   if (i === R.i && R.doc) place({frac}); else loadChapter(i, {frac});
 };
+const gz = $('#gesture');
+let gx = 0, gy = 0, touchTap = 0;
+function tapAt(x, y){
+  if (!R.doc) return;
+  const fr = frame.getBoundingClientRect();
+  const el = R.doc.elementFromPoint(x - fr.left, y - fr.top);
+  const a = el && el.closest && el.closest('a[href]');
+  if (a && !$('#reader').classList.contains('show')){ followLink(a.getAttribute('href')); return; }
+  tap(x);
+}
+gz.addEventListener('touchstart', e => { const t = e.changedTouches[0]; gx = t.clientX; gy = t.clientY; }, {passive: true});
+gz.addEventListener('touchend', e => {
+  const t = e.changedTouches[0], dx = t.clientX - gx, dy = t.clientY - gy;
+  touchTap = Date.now();
+  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.4){ setChrome(false); if (dx < 0) next(); else prev(); }
+  else if (Math.abs(dx) < 12 && Math.abs(dy) < 12) tapAt(t.clientX, t.clientY);
+}, {passive: true});
+gz.addEventListener('click', e => { if (Date.now() - touchTap < 700) return; tapAt(e.clientX, e.clientY); });
+addEventListener('keydown', e => {
+  if (!R.book || $('#reader').hidden) return;
+  if (e.key === 'ArrowRight' || e.key === ' '){ e.preventDefault(); next(); }
+  else if (e.key === 'ArrowLeft'){ e.preventDefault(); prev(); }
+});
 let rz;
 addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (R.doc) applyLayout(); }, 150); });
 addEventListener('orientationchange', () => { clearTimeout(rz); rz = setTimeout(() => { if (R.doc) applyLayout(); }, 350); });
