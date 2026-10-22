@@ -1,0 +1,16 @@
+{
+  "name": "alcove.",
+  "short_name": "alcove.",
+  "description": "A quiet place to read your EPUBs and PDFs.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2b1b17",
+  "theme_color": "#2b1b17",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

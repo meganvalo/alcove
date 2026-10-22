@@ -1,6 +1,6 @@
 // alcove. service worker: network first (so updates show up), cache as fallback for offline.
-const V = 'alcove-v1';
-const SHELL = ['./', './index.html', './icon.png'];
+const V = 'alcove-v2';
+const SHELL = ['./', './index.html', './manifest.json', './icon.png', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).catch(() => {}));
