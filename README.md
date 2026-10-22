@@ -44,18 +44,6 @@ Notes:
 - Only Safari can install web apps on iPhone and iPad. Other iOS browsers can open the site but can't add it to the Home Screen as a proper app.
 - Testing so far: the author uses it on iPad and iPhone, and the code has been run through automated tests in a phone-sized Chromium browser. Other combinations in the table are expected to work but haven't all been tried. Issues and reports are welcome.
 
-## Install (host it yourself)
-
-You need a free GitHub account.
-
-1. **Create a repository** (for example `alcove`).
-2. **Upload these three files** to the root of the repo:
-   - `index.html`
-   - `sw.js`
-   - `icon.png`
-3. In the repo go to **Settings → Pages**. Under **Build and deployment**, set **Source** to "Deploy from a branch", choose the `main` branch and the `/ (root)` folder, then save.
-4. After a minute or two your site is live at `https://YOUR-USERNAME.github.io/REPO-NAME/`.
-
 ### Add it to your phone or tablet
 
 - **iPhone / iPad:** open the site in **Safari**, tap the **Share** button, choose **Add to Home Screen**, then open alcove. from the new icon.
@@ -132,6 +120,3 @@ To customize it, edit `index.html` directly. Colors live in the `body[data-theme
 - Title font: **Chrysanthi Unicode**, a freeware font from [FontSpace](https://www.fontspace.com/chrysanthi-unicode-font-f13315). It's embedded in the file, trimmed to Latin characters to keep the app small. Check its license on FontSpace if you plan to redistribute your own copy.
 - PDF support: [PDF.js](https://github.com/mozilla/pdf.js) by Mozilla, Apache License 2.0, loaded from cdnjs at runtime.
 
-## License
-
-Add the license of your choice here (MIT is a common option for projects like this).
