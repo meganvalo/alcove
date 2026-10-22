@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="alcove.">
-<meta name="theme-color" content="#442d1c">
+<meta name="theme-color" content="#302d29">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
@@ -18,7 +18,7 @@
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
-html,body{margin:0;height:100%;background:#9d9167}
+html,body{margin:0;height:100%;background:#f5f0e8}
 body{
   font:16px/1.4 -apple-system,system-ui,"Helvetica Neue",sans-serif;
   color:var(--fg);background:var(--bg);
@@ -176,7 +176,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 #toast.on{opacity:1}
 </style>
 </head>
-<body data-theme="olive">
+<body data-theme="linen">
 
 <div id="lib" class="view">
   <header>
@@ -260,6 +260,7 @@ const hlRgba = (i, a) => { const h = (HLS[i] || HLS[0]).hex; return `rgba(${pars
    Spiced Wine #743014, Cowhide Cocoa #442D1C. One entry per theme drives the CSS variables, the reader page and the picker.
    light = dark text on a light surface (PDF pages stay white); hlA = how strong highlights are on that surface. */
 const THEMES = {
+  linen:    {label: 'linen',          light: true,  bg: '#f5f0e8', fg: '#302d29', dim: '#7d6654', line: '#e0d7c7', tile: '#ebe4d6', chrome: 'rgba(245,240,232,.94)', accent: '#7d6452', onAccent: '#f5f0e8', status: '#302d29', danger: '#a23a22', sel: 'rgba(138,113,94,.28)', hlA: .62},
   olive:    {label: 'olive harvest',   light: true,  bg: '#9d9167', fg: '#2a1d10', dim: '#4a3e24', line: '#857a52', tile: '#aaa07a', chrome: 'rgba(157,145,103,.93)', accent: '#442d1c', onAccent: '#e8d1a7', status: '#442d1c', danger: '#7a2410', sel: 'rgba(68,45,28,.28)',   hlA: .85},
   batter:   {label: 'golden batter',   light: true,  bg: '#e8d1a7', fg: '#442d1c', dim: '#7a6246', line: '#d0b88a', tile: '#f0dfbc', chrome: 'rgba(232,209,167,.93)', accent: '#84592b', onAccent: '#fbf1dc', status: '#442d1c', danger: '#8f2a12', sel: 'rgba(132,89,43,.28)',  hlA: .62},
   caramel:  {label: 'toasted caramel', light: false, bg: '#84592b', fg: '#f3e4c6', dim: '#d6bd93', line: '#6c4822', tile: '#946a3a', chrome: 'rgba(132,89,43,.93)',  accent: '#e8d1a7', onAccent: '#442d1c', status: '#84592b', danger: '#ffd2c2', sel: 'rgba(232,209,167,.32)', hlA: .58},
@@ -275,12 +276,12 @@ const THEMES = {
   document.head.append(st);
 }
 const THEME_MIGRATE = {espresso: 'cocoa', light: 'batter'};
-let S = {size:19, font:'serif', theme:'olive', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent'};
+let S = {size:19, font:'serif', theme:'linen', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('alcove.settings') || '{}')); } catch (e) {}
 if (THEME_MIGRATE[S.theme]) S.theme = THEME_MIGRATE[S.theme];
 function saveSettings(){ try { localStorage.setItem('alcove.settings', JSON.stringify(S)); } catch (e) {} }
 const darkQ = matchMedia('(prefers-color-scheme: dark)');
-function theme(){ return S.theme === 'auto' ? (darkQ.matches ? 'cocoa' : 'batter') : (THEMES[S.theme] ? S.theme : 'olive'); }
+function theme(){ return S.theme === 'auto' ? (darkQ.matches ? 'cocoa' : 'linen') : (THEMES[S.theme] ? S.theme : 'linen'); }
 function applyTheme(){
   const th = theme();
   document.body.dataset.theme = th;
@@ -1887,7 +1888,7 @@ function buildEdit(body, b){
 function themeSwatches(){
   const sw = (k, label, inner) => `<button class="sw" data-val="${k}" aria-label="${label}"><i class="swc" style="${inner}"></i><span>${label}</span></button>`;
   return Object.entries(THEMES).map(([k, t]) => sw(k, t.label, `background:${t.bg};--r:${t.accent}`)).join('') +
-    sw('auto', 'auto', `background:linear-gradient(135deg,${THEMES.batter.bg} 50%,${THEMES.cocoa.bg} 50%);--r:${THEMES.batter.accent}`);
+    sw('auto', 'auto', `background:linear-gradient(135deg,${THEMES.linen.bg} 50%,${THEMES.cocoa.bg} 50%);--r:${THEMES.linen.accent}`);
 }
 function buildSettings(body){
   body.innerHTML = `
