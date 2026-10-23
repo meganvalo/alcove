@@ -35,7 +35,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   padding:calc(env(safe-area-inset-top) + 18px) 20px calc(env(safe-area-inset-bottom) + 40px)}
 #lib header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px}
 .wm{font-family:'Oblata Display',ui-rounded,ui-serif,Georgia,serif;font-weight:400;font-size:44px;letter-spacing:0;margin:0;line-height:1.05;font-synthesis:none}
-.actions{display:flex;gap:20px;font-size:17px}
+.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 16px;font-size:16px}
 .actions button{color:var(--fg)}
 .actions button.dim{color:var(--dim)}
 #search{width:100%;margin:0 0 20px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);
@@ -184,6 +184,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
     <div class="actions">
       <button id="sortBtn" class="dim" hidden>sort</button>
       <button id="editBtn" class="dim" hidden>edit</button>
+      <button id="appSetBtn" class="dim">settings</button>
       <button id="addBtn">add</button>
     </div>
   </header>
@@ -520,6 +521,41 @@ const dbGet = (st, k) => idb(st, 'readonly', s => s.get(k));
 const dbPut = (st, v, k) => idb(st, 'readwrite', s => k === undefined ? s.put(v) : s.put(v, k));
 const dbDel = (st, k) => idb(st, 'readwrite', s => s.delete(k));
 
+/* Covers are stored inside the book record as plain bytes (coverBuf), not as a Blob. A Blob read back from IndexedDB stays tied
+   to the file that backed it, and on iOS that file can vanish when the record is saved again (which reading does constantly),
+   leaving the cover blank. Bytes have no such tie. */
+const anyCover = b => b.coverBuf && b.coverBuf.byteLength ? new Blob([b.coverBuf], {type: b.coverType || 'image/jpeg'}) : (b.cover instanceof Blob ? b.cover : null);
+async function packCover(blob){
+  if (!blob) return {};
+  try { const buf = await blob.arrayBuffer(); return buf.byteLength ? {coverBuf: buf, coverType: blob.type || 'image/jpeg'} : {}; } catch (e) { return {}; }
+}
+let fixP = null;
+async function fixCovers(){
+  let changed = false;
+  for (const b of lib){
+    try {
+      if (b.coverBuf && b.coverBuf.byteLength){ if (b.cover){ delete b.cover; await dbPut('books', b); } continue; }
+      let pack = b.cover instanceof Blob ? await packCover(b.cover) : {};
+      let dirty = false;
+      if (!pack.coverBuf && !b.coverTried){
+        const file = await dbGet('files', b.id);
+        let c = null, offline = false;
+        if (file){
+          if (b.kind === 'pdf'){ try { c = (await parsePdfInfo(file)).cover; } catch (e) { offline = !!(e && e.message === 'PDFJS_OFFLINE'); } }
+          else { try { const bk = await parseBook(file); if (bk.coverPath) c = await shrinkCover(await bk.zip.blobOf(bk.coverPath, bk.coverType)); } catch (e) {} }
+        }
+        pack = await packCover(c);
+        if (!offline){ b.coverTried = true; dirty = true; }
+      }
+      if (pack.coverBuf){ Object.assign(b, pack); changed = true; dirty = true; }
+      if (b.cover && !pack.coverBuf){ changed = true; dirty = true; }
+      if (b.cover) delete b.cover;
+      if (dirty) await dbPut('books', b);
+    } catch (e) { console.error(e); }
+  }
+  return changed;
+}
+
 /* =============== library =============== */
 let lib = [], editing = false, coverUrls = [];
 const SORTS = {recent: 'recently read', added: 'recently added', title: 'title', author: 'author'};
@@ -531,7 +567,10 @@ function sortLib(){
     by === 'added' ? b.added - a.added :
     (lastRead(b) || b.added) - (lastRead(a) || a.added));
 }
-async function loadLib(){ lib = await dbAll(); sortLib(); renderLib(); }
+async function loadLib(){
+  lib = await dbAll(); sortLib(); renderLib();
+  fixP = fixCovers().then(c => { if (c) renderLib(); }).catch(e => console.error(e)).finally(() => { fixP = null; });
+}
 function renderLib(){
   coverUrls.forEach(URL.revokeObjectURL); coverUrls = [];
   if (!lib.length) editing = false;
@@ -549,8 +588,9 @@ function renderLib(){
     const tile = document.createElement('div'); tile.className = 'item';
     const btn = document.createElement('button'); btn.className = 'tile';
     const cover = document.createElement('div'); cover.className = 'cover';
-    if (b.cover){
-      const img = document.createElement('img'); const u = URL.createObjectURL(b.cover); coverUrls.push(u);
+    const cb = anyCover(b);
+    if (cb){
+      const img = document.createElement('img'); const u = URL.createObjectURL(cb); coverUrls.push(u);
       img.src = u; img.alt = ''; cover.append(img);
     } else {
       const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = b.title; cover.append(ph);
@@ -605,7 +645,7 @@ async function addFiles(files){
       }
       const id = (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + '-' + Math.random().toString(36).slice(2));
       await dbPut('files', f.slice(0, f.size, isPdf ? 'application/pdf' : 'application/epub+zip'), id);
-      await dbPut('books', {id, sig, kind: isPdf ? 'pdf' : 'epub', title: info.title || f.name.replace(/\.(epub|pdf)$/i, ''), author: info.author || '', cover: info.cover, added: Date.now(), opened: 0, v: 2, startedAt: 0, lastReadAt: 0, finishedAt: 0, pos: null, pct: 0, bm: [], hl: []});
+      await dbPut('books', {id, sig, kind: isPdf ? 'pdf' : 'epub', title: info.title || f.name.replace(/\.(epub|pdf)$/i, ''), author: info.author || '', ...(await packCover(info.cover)), coverTried: true, added: Date.now(), opened: 0, v: 2, startedAt: 0, lastReadAt: 0, finishedAt: 0, pos: null, pct: 0, bm: [], hl: []});
       added++;
       lib = (await dbAll());
     } catch (err) { console.error(err); failed.push(f.name); }
@@ -632,6 +672,7 @@ async function openBook(id){
   if (R.opening) return;
   R.opening = true;
   try {
+    if (fixP) await fixP;
     toast('opening…', true);
     const [meta, file] = await Promise.all([dbGet('books', id), dbGet('files', id)]);
     if (!meta || !file) throw new Error('missing book');
@@ -1608,7 +1649,8 @@ async function exportFull(){
     const rec = plainMeta(m);
     rec.file = `files/${m.id}.${m.kind === 'pdf' ? 'pdf' : 'epub'}`;
     entries.push({name: rec.file, blob: f});
-    if (m.cover){ rec.cover = `covers/${m.id}.jpg`; entries.push({name: rec.cover, blob: m.cover}); }
+    const cb = anyCover(m);
+    if (cb){ rec.cover = `covers/${m.id}.jpg`; entries.push({name: rec.cover, blob: cb}); }
     list.push(rec);
   }
   const enc = new TextEncoder();
@@ -1700,7 +1742,8 @@ async function applyImport(pkg, mode){
       const type = rec.kind === 'pdf' ? 'application/pdf' : 'application/epub+zip';
       const file = await pkg.zip.sliceOf(rec.file, type);
       const meta = {...rec, cover: null}; delete meta.file; delete meta.cover;
-      meta.cover = rec.cover && pkg.zip.has(rec.cover) ? await pkg.zip.sliceOf(rec.cover, 'image/jpeg') : null;
+      if (rec.cover && pkg.zip.has(rec.cover)) Object.assign(meta, await packCover(await pkg.zip.sliceOf(rec.cover, 'image/jpeg')));
+      meta.coverTried = true;
       meta.v = 2;
       await dbPut('files', file, meta.id); await dbPut('books', meta);
       if (meta.pos){ try { localStorage.setItem('alcove.pos.' + meta.id, JSON.stringify(meta.pos)); } catch (e) {} }
@@ -1791,7 +1834,8 @@ function openSheet(kind, arg){
   else if (kind === 'edit'){ $('#sheetTitle').textContent = 'edit details'; buildEdit(body, arg); }
   else if (kind === 'backup'){ BK = {}; $('#sheetTitle').textContent = 'backup & restore'; buildBackup(body); }
   else if (kind === 'sort'){ $('#sheetTitle').textContent = 'sort shelf'; buildSort(body); }
-  else { $('#sheetTitle').textContent = 'settings'; buildSettings(body); }
+  else if (kind === 'app'){ $('#sheetTitle').textContent = 'settings'; buildAppSettings(body); }
+  else { $('#sheetTitle').textContent = 'reading settings'; buildSettings(body); }
   s.hidden = false;
   requestAnimationFrame(() => requestAnimationFrame(() => s.classList.add('open')));
 }
@@ -1890,21 +1934,14 @@ function themeSwatches(){
   return Object.entries(THEMES).map(([k, t]) => sw(k, t.label, `background:${t.bg};--r:${t.accent}`)).join('') +
     sw('auto', 'auto', `background:linear-gradient(135deg,${THEMES.linen.bg} 50%,${THEMES.cocoa.bg} 50%);--r:${THEMES.linen.accent}`);
 }
-function buildSettings(body){
-  body.innerHTML = `
-  <div class="row"><span>text size</span><div class="step"><button data-step="-1" aria-label="smaller">A−</button><b id="sv"></b><button data-step="1" aria-label="larger">A+</button></div></div>
-  <div class="row"><span>typeface</span><div class="seg" data-key="font"><button data-val="serif">serif</button><button data-val="sans">sans</button></div></div>
-  <div class="row wrap"><span>theme</span><div class="swgrid" data-key="theme">${themeSwatches()}</div></div>
-  <div class="row"><span>layout</span><div class="seg" data-key="layout"><button data-val="pages">pages</button><button data-val="scroll">scroll</button></div></div>
-  <div class="row"><span>margins</span><div class="seg" data-key="margin"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
-  <div class="row"><span>spacing</span><div class="seg" data-key="spacing"><button data-val="tight">tight</button><button data-val="normal">normal</button><button data-val="loose">loose</button></div></div>
-  <div class="row"><span>pdf pages</span><div class="seg" data-key="pdf"><button data-val="auto">auto</button><button data-val="original">original</button><button data-val="inverted">dark</button></div></div>`;
+function bindSettings(body){
   const sync = () => {
-    body.querySelector('#sv').textContent = S.size;
+    const sv = body.querySelector('#sv'); if (sv) sv.textContent = S.size;
     body.querySelectorAll('[data-key]').forEach(g => g.querySelectorAll('button').forEach(b => b.classList.toggle('on', S[g.dataset.key] === b.dataset.val)));
   };
   body.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.go){ openSheet(b.dataset.go); return; }
     if (b.dataset.step) S.size = Math.max(13, Math.min(32, S.size + Number(b.dataset.step)));
     else if (b.dataset.val) S[b.closest('[data-key]').dataset.key] = b.dataset.val;
     else return;
@@ -1912,11 +1949,32 @@ function buildSettings(body){
   };
   sync();
 }
+/* reading settings: only matter inside a book */
+function buildSettings(body){
+  body.innerHTML = `
+  <div class="row"><span>text size</span><div class="step"><button data-step="-1" aria-label="smaller">A−</button><b id="sv"></b><button data-step="1" aria-label="larger">A+</button></div></div>
+  <div class="row"><span>typeface</span><div class="seg" data-key="font"><button data-val="serif">serif</button><button data-val="sans">sans</button></div></div>
+  <div class="row"><span>layout</span><div class="seg" data-key="layout"><button data-val="pages">pages</button><button data-val="scroll">scroll</button></div></div>
+  <div class="row"><span>margins</span><div class="seg" data-key="margin"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
+  <div class="row"><span>spacing</span><div class="seg" data-key="spacing"><button data-val="tight">tight</button><button data-val="normal">normal</button><button data-val="loose">loose</button></div></div>
+  <div class="row"><span>pdf pages</span><div class="seg" data-key="pdf"><button data-val="auto">auto</button><button data-val="original">original</button><button data-val="inverted">dark</button></div></div>
+  <button class="toc" data-go="app">theme &amp; app settings<div class="sub">colors, backup and restore</div></button>`;
+  bindSettings(body);
+}
+/* app settings: affect the whole app, reachable from the library */
+function buildAppSettings(body){
+  const t = lastBackupAt();
+  body.innerHTML = `
+  <div class="row wrap"><span>theme</span><div class="swgrid" data-key="theme">${themeSwatches()}</div></div>
+  <button class="toc" data-go="backup">backup &amp; restore<div class="sub">${t ? 'last full backup ' + ago(t) : 'no full backup yet'}</div></button>`;
+  bindSettings(body);
+}
 
 /* =============== wiring =============== */
 $('#addBtn').onclick = $('#addBtn2').onclick = () => $('#file').click();
 $('#file').onchange = e => { const f = e.target.files; if (f && f.length) addFiles(f); e.target.value = ''; };
 $('#sortBtn').onclick = () => openSheet('sort');
+$('#appSetBtn').onclick = () => openSheet('app');
 $('#editBtn').onclick = () => { editing = !editing; renderLib(); };
 $('#search').oninput = renderLib;
 $('#backBtn').onclick = () => closeBook();
