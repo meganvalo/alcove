@@ -688,7 +688,7 @@ async function openBook(id){
         R.urls.set(p, u); return u;
       };
     }
-    Object.assign(R, {kind, book: bk, meta, back: [], doc: null, wrap: null});
+    Object.assign(R, {kind, book: bk, meta, back: [], doc: null, wrap: null, ready: kind === 'pdf', settle: null});
     meta.bm = meta.bm || []; meta.hl = meta.hl || [];
     $('#reader').dataset.kind = kind;
     $('#bookTitle').textContent = meta.title;
@@ -744,8 +744,90 @@ async function closeBook(fromPop){
   await loadLib();
 }
 
+/* =============== publisher styling (filtered, scoped per chapter) =============== */
+function lenEm(v, lo, hi){
+  const m = /^(-?\d*\.?\d+)(em|rem|px|pt|%|ex|ch)?$/i.exec(String(v).trim());
+  if (!m) return false;
+  let n = parseFloat(m[1]); const u = (m[2] || 'px').toLowerCase();
+  if (u === 'px') n /= 16; else if (u === 'pt') n /= 12; else if (u === '%') n *= .22; else if (u === 'ex' || u === 'ch') n *= .5;
+  return (Math.round(Math.max(lo, Math.min(hi, n)) * 100) / 100) + 'em';
+}
+const kw = re => v => re.test(v) && v;
+const CSS_KEEP = {
+  'font-style': kw(/^(italic|oblique|normal)$/i),
+  'font-weight': kw(/^(bold|bolder|lighter|normal|[1-9]00)$/i),
+  'font-variant': kw(/^(small-caps|normal)$/i),
+  'font-variant-caps': kw(/^(small-caps|all-small-caps|normal)$/i),
+  'text-transform': kw(/^(uppercase|lowercase|capitalize|none)$/i),
+  'text-decoration': kw(/^(underline|line-through|none)$/i),
+  'text-decoration-line': kw(/^(underline|line-through|none)$/i),
+  'text-align': kw(/^(left|right|center|justify)$/i),
+  'vertical-align': kw(/^(super|sub|baseline)$/i),
+  'white-space': v => /^(pre|pre-wrap|pre-line|normal)$/i.test(v) && (v === 'pre' ? 'pre-wrap' : v),
+  'list-style-type': kw(/^(disc|circle|square|decimal|lower-alpha|upper-alpha|lower-roman|upper-roman|none)$/i),
+  'text-indent': v => lenEm(v, -3, 3),
+  'margin-left': v => lenEm(v, -1, 4), 'margin-right': v => lenEm(v, 0, 4),
+  'padding-left': v => lenEm(v, 0, 4), 'padding-right': v => lenEm(v, 0, 4),
+  'margin-top': v => lenEm(v, 0, 3), 'margin-bottom': v => lenEm(v, 0, 3),
+  'letter-spacing': v => lenEm(v, -.05, .3),
+  'font-size': v => {
+    const k = ({smaller: '.85em', larger: '1.2em', small: '.85em', 'x-small': '.75em', large: '1.2em', 'x-large': '1.4em'})[v.toLowerCase()];
+    if (k) return k;
+    const m = /^(\d*\.?\d+)(em|%)$/i.exec(v); if (!m) return false;
+    let n = parseFloat(m[1]); if (m[2] === '%') n /= 100;
+    return Math.max(.6, Math.min(2.6, n)) + 'em';
+  }
+};
+function cleanDecl(st, alignOnly){
+  const out = [];
+  for (let k = 0; k < st.length; k++){
+    const p = st[k], f = CSS_KEEP[p];
+    if (!f || (alignOnly && p !== 'text-align')) continue;
+    const v = f(st.getPropertyValue(p).trim());
+    if (v) out.push(p + ':' + v);
+  }
+  return out.join(';');
+}
+function cleanCss(text){
+  let sheet;
+  try { sheet = new CSSStyleSheet(); sheet.replaceSync(text); } catch (e) { return ''; }
+  const out = [];
+  for (const r of sheet.cssRules){
+    if (r.type !== 1) continue;
+    const a = [], b = [];
+    for (let sel of r.selectorText.split(/,(?![^(]*\))/)){
+      sel = sel.trim();
+      if (!sel || /::|:root|:(first-letter|first-line|before|after)|^\*$/i.test(sel)) continue;
+      const rest = sel.replace(/^html\b\s*/i, '').replace(/^body\b\s*/i, '').replace(/^>\s*/, '');
+      if (!rest && /^(html|body)\b/i.test(sel)) b.push('@@'); else if (rest) a.push('@@ ' + rest);
+    }
+    const full = a.length ? cleanDecl(r.style) : '', al = b.length ? cleanDecl(r.style, true) : '';
+    if (full) out.push(a.join(',') + '{' + full + '}');
+    if (al) out.push(b.join(',') + '{' + al + '}');
+  }
+  return out.join('\n');
+}
+async function pubCss(doc, dir){
+  const bk = R.book; if (!bk) return '';
+  bk.css = bk.css || new Map();
+  let out = '';
+  for (const n of doc.querySelectorAll('style,link[rel~="stylesheet"]')){
+    if (n.tagName === 'STYLE'){ out += cleanCss(n.textContent) + '\n'; continue; }
+    const h = n.getAttribute('href');
+    if (!h || /^(https?:|data:|blob:)/i.test(h)) continue;
+    const pth = resolvePath(dir, h.split('#')[0]);
+    if (!bk.css.has(pth)){ let t = ''; try { t = cleanCss(await bk.zip.text(pth)); } catch (e) {} bk.css.set(pth, t); }
+    out += bk.css.get(pth) + '\n';
+  }
+  return out;
+}
+function addPub(d, css){
+  if (!css) return;
+  const st = d.createElement('style'); st.textContent = css; d.head.appendChild(st);
+}
 async function rewrite(doc, path){
   const dir = dirOf(path), jobs = [];
+  const css = await pubCss(doc, dir);
   const urlFor = async href => {
     if (!href || /^(https?:|data:|blob:|#)/i.test(href)) return null;
     try { return await R.book.url(resolvePath(dir, href)); } catch (e) { return null; }
@@ -754,7 +836,8 @@ async function rewrite(doc, path){
   doc.querySelectorAll('*').forEach(n => {
     for (const at of [...n.attributes]){
       const k = at.name.toLowerCase();
-      if (k.startsWith('on') || k === 'srcdoc' || k === 'formaction') n.removeAttribute(at.name);
+      if (k === 'style'){ const cs = cleanDecl(n.style); if (cs) n.setAttribute('style', cs); else n.removeAttribute('style'); }
+      else if (k.startsWith('on') || k === 'srcdoc' || k === 'formaction') n.removeAttribute(at.name);
       else if ((k === 'href' || k === 'xlink:href' || k === 'src') && /^\s*(javascript|vbscript):/i.test(at.value)) n.removeAttribute(at.name);
     }
   });
@@ -766,15 +849,16 @@ async function rewrite(doc, path){
     jobs.push(urlFor(el.getAttribute(attr)).then(u => { if (u){ el.setAttribute('xlink:href', u); el.setAttribute('href', u); } }));
   });
   await Promise.all(jobs);
+  return css;
 }
 async function chapterHtml(i){
   const item = R.book.spine[i];
   let html;
   try { html = await R.book.zip.text(item.path); } catch (e) { html = '<p>This section could not be read.</p>'; }
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  await rewrite(doc, item.path);
+  const css = (await rewrite(doc, item.path)).split('@@').join('#a-wrap .a-ch[data-i="' + i + '"]');
   const lang = (doc.documentElement.getAttribute('lang') || doc.documentElement.getAttribute('xml:lang') || 'en').replace(/[^a-zA-Z-]/g, '');
-  return {body: doc.body ? doc.body.innerHTML : '', lang};
+  return {body: doc.body ? doc.body.innerHTML : '', lang, css};
 }
 const section = (i, body) => `<section class="a-ch" data-i="${i}">${body}</section>`;
 function preload(html){
@@ -788,11 +872,12 @@ async function loadChapter(i, target){
   const tok = ++R.token;
   closeHlbar(true);
   R.i = i; R.lo = R.hi = i; R.target = target || {frac: 0};
+  R.frac = R.target.end ? 1 : (R.target.frac || 0);
   const ch = await chapterHtml(i);
   if (tok !== R.token) return;
   R.docLayout = S.layout;
   frame.style.opacity = 0;
-  frame.srcdoc = `<!doctype html><html lang="${ch.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="a-css"></style></head><body><div id="a-wrap">${section(i, ch.body)}</div></body></html>`;
+  frame.srcdoc = `<!doctype html><html lang="${ch.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="a-css"></style><style>${ch.css}</style></head><body><div id="a-wrap">${section(i, ch.body)}</div></body></html>`;
 }
 frame.addEventListener('load', async () => {
   const d = frame.contentDocument;
@@ -809,7 +894,20 @@ frame.addEventListener('load', async () => {
   tagInline(d);
   applyLayout(true);
   frame.style.opacity = 1;
+  armSettle(tok);
 });
+/* Layout can shift after first placement (fonts, images). Keep re-applying the restore target until the reader
+   actually moves, and don't overwrite the saved position until then. */
+function armSettle(tok){
+  const t = R.target; R.settle = t;
+  const again = () => { if (R.settle === t && tok === R.token && R.doc) place(t, false); };
+  try { R.doc.fonts.ready.then(again); } catch (e) {}
+  setTimeout(again, 700);
+  setTimeout(() => { if (tok !== R.token) return; again(); R.settle = null; if (!R.ready){ R.ready = true; flushSave(); } }, 2500);
+}
+function userMoved(){ R.settle = null; R.ready = true; }
+document.addEventListener('keydown', userMoved, true);
+document.addEventListener('pointerdown', userMoved, true);
 
 function docCss(){
   const {w, h, px, py} = R.geo, t = THEMES[theme()];
@@ -822,6 +920,7 @@ function docCss(){
   body{margin:0;background:${t.bg};color:${t.fg};font:${S.size}px/${({tight: 1.4, normal: 1.55, loose: 1.8})[S.spacing] || 1.55} ${ff};-webkit-font-smoothing:antialiased}
   #a-wrap{overflow-wrap:break-word;-webkit-hyphens:auto;hyphens:auto}
   #a-wrap *{color:inherit!important;background:none!important;font-family:inherit!important;max-width:100%}
+  #a-wrap code,#a-wrap pre,#a-wrap kbd,#a-wrap samp,#a-wrap tt{font-family:ui-monospace,Menlo,monospace!important;font-size:.9em}
   #a-wrap p{margin:0 0 .85em;text-align:justify;orphans:2;widows:2}
   #a-wrap h1,#a-wrap h2,#a-wrap h3,#a-wrap h4,#a-wrap h5,#a-wrap h6{line-height:1.25;font-weight:600;margin:1.1em 0 .55em;text-align:left;break-after:avoid;-webkit-column-break-after:avoid}
   #a-wrap h1{font-size:1.5em}#a-wrap h2{font-size:1.3em}#a-wrap h3{font-size:1.12em}
@@ -947,6 +1046,7 @@ async function extend(){
     if (R.hi < n - 1 && se.scrollTop + se.clientHeight * 3 > se.scrollHeight){
       const ch = await chapterHtml(R.hi + 1);
       if (tok !== R.token || R.doc !== d) return;
+      addPub(d, ch.css);
       wrap.insertAdjacentHTML('beforeend', section(R.hi + 1, ch.body));
       hlApply(wrap.querySelector('.a-ch[data-i="' + (R.hi + 1) + '"]'));
       R.hi++;
@@ -957,6 +1057,7 @@ async function extend(){
       if (tok !== R.token || R.doc !== d) return;
       await preload(ch.body);
       if (tok !== R.token || R.doc !== d) return;
+      addPub(d, ch.css);
       const h0 = se.scrollHeight;
       wrap.insertAdjacentHTML('afterbegin', section(R.lo - 1, ch.body));
       hlApply(wrap.querySelector('.a-ch[data-i="' + (R.lo - 1) + '"]'));
@@ -1009,9 +1110,10 @@ function flushSave(){
     if (!P.doc) return;
     pos = {page: P.cur, frac: P.frac}; R.meta.pct = P.n ? ((P.cur - 1) + P.frac) / P.n : 0;
   } else {
+    if (!R.ready) return;
     pos = {i: R.i, frac: R.frac};
     const an = currentAnchor();
-    if (an && an.i === R.i) pos.off = an.off;
+    if (an){ pos.i = an.i; pos.off = an.off; if (an.i !== R.i) pos.frac = 0; }
     R.meta.pct = overall();
   }
   pos.t = Date.now(); R.meta.pos = pos;
@@ -1078,7 +1180,9 @@ function bindDoc(d){
   d.addEventListener('load', e => {
     const t = e.target;
     if (t && t.tagName === 'IMG' && t.naturalHeight && t.naturalHeight <= 48) t.classList.add('a-inl');
+    if (R.settle) place(R.settle, false);
   }, true);
+  ['touchstart', 'wheel', 'mousedown', 'keydown'].forEach(ev => d.addEventListener(ev, userMoved, {passive: true, capture: true}));
   d.addEventListener('touchstart', e => { const t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY; }, {passive: true});
   d.addEventListener('touchend', e => {
     if (S.layout !== 'pages') return;
@@ -1165,7 +1269,13 @@ function caretAt(d, x, y, dir){
 function currentAnchor(){
   if (!R.doc || !R.geo || R.kind === 'pdf') return null;
   const g = R.geo;
-  try { return S.layout === 'pages' ? caretAt(R.doc, g.px + 8, g.py + 6) : caretAt(R.doc, g.px + 8, 20); } catch (e) { return null; }
+  try {
+    for (const dy of [6, 30, 60, 100]){
+      const a = S.layout === 'pages' ? caretAt(R.doc, g.px + 8, g.py + dy) : caretAt(R.doc, g.px + 8, dy + 14);
+      if (a) return a;
+    }
+  } catch (e) {}
+  return null;
 }
 function visibleRange(){
   const a = currentAnchor(); if (!a) return null;
