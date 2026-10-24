@@ -41,9 +41,46 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 #search{width:100%;margin:0 0 20px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);
   background:transparent;color:var(--fg);font:16px -apple-system,system-ui,sans-serif;-webkit-appearance:none;outline:none}
 #search::placeholder{color:var(--dim)}
-#shelf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 18px;align-items:start}
-@media (min-width:640px){#shelf{grid-template-columns:repeat(4,minmax(0,1fr))}}
+#shelf,#cur{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 18px;align-items:start}
+@media (min-width:640px){#shelf,#cur{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .item{min-width:0}
+#lib .hl{display:flex;align-items:center;gap:14px;min-width:0}
+#menuBtn{flex:none;width:30px;height:30px;display:flex;align-items:center;justify-content:center;margin-left:-6px;color:var(--fg)}
+#crumb{margin:-6px 0 18px;font-size:14px;color:var(--dim)}
+#vEmpty{margin:40px 0;text-align:center;color:var(--dim);font-size:15px;line-height:1.5}
+.sec{margin:0 0 12px;font:500 12px -apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+#curWrap{margin-bottom:28px}#cur{margin-bottom:26px}
+#scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:59;opacity:0;pointer-events:none;transition:opacity .22s}
+#side{position:fixed;top:0;bottom:0;left:0;width:min(80vw,310px);background:var(--bg);border-right:1px solid var(--line);z-index:60;
+  transform:translateX(-102%);transition:transform .24s ease;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top) + 22px) 22px calc(env(safe-area-inset-bottom) + 24px)}
+#side .wm{font-size:34px;margin-bottom:20px}
+body.side-open #side{transform:none}body.side-open #scrim{opacity:1;pointer-events:auto}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:11px 0;font-size:17px;text-align:left}
+.srow>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow.cur{color:var(--accent)}.srow .n{flex:none;color:var(--dim);font-size:14px}.srow.dimrow{color:var(--dim)}
+.sfold{display:flex;align-items:center}.sfold .srow{flex:1;min-width:0}
+.sdots{flex:none;padding:10px 0 10px 12px;color:var(--dim);letter-spacing:1px}
+.qst{font-size:13px;color:var(--dim);margin:8px 2px 0;min-height:18px}
+.toc b{font-weight:700;color:var(--accent)}
+.stats{padding:4px 22px 20px}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.scard{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.scard b{display:block;font-size:22px;font-weight:600}.scard span{font-size:12px;color:var(--dim)}
+.sbars{display:flex;align-items:flex-end;gap:8px;height:92px;margin:8px 0 6px}
+.sbars div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:11px;color:var(--dim);gap:4px}
+.sbars i{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px}
+.stats h3{margin:20px 0 4px;font:500 12px -apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.sbk{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:15px}
+.sbk span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sbk span:last-child{color:var(--dim);flex:none}
+.slbl{margin:22px 0 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.form select{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);font:16px -apple-system,system-ui,sans-serif;-webkit-appearance:none;appearance:none;outline:none}
+.form select option{color:#000}
+#splash{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;transition:opacity .4s ease}
+#splash[hidden]{display:none}#splash.out{opacity:0;pointer-events:none}
+#splash .wm{font-size:58px;animation:spIn .7s ease both}
+@keyframes spIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){#splash .wm{animation:none}#side,#scrim{transition:none}}
 .tile{display:block;text-align:left;width:100%;min-width:0;max-width:100%}
 .cover{position:relative;width:100%;border-radius:4px;overflow:hidden;background:var(--tile);border:1px solid var(--line)}
 .cover::before{content:"";display:block;padding-top:150%}
@@ -178,9 +215,12 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 </head>
 <body data-theme="linen">
 
+<div id="scrim"></div>
+<aside id="side"><div class="wm">alcove.</div><div id="sideBody"></div></aside>
+<div id="splash" hidden><div class="wm">alcove.</div></div>
 <div id="lib" class="view">
   <header>
-    <h1 class="wm">alcove.</h1>
+    <div class="hl"><button id="menuBtn" aria-label="folders and menu"><svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2 2h18M2 8h18M2 14h12"/></svg></button><h1 class="wm">alcove.</h1></div>
     <div class="actions">
       <button id="sortBtn" class="dim" hidden>sort</button>
       <button id="editBtn" class="dim" hidden>edit</button>
@@ -189,8 +229,11 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
     </div>
   </header>
   <input id="search" type="search" placeholder="search" hidden>
-  <p id="hint" hidden>tap a cover to rename or delete it</p>
+  <p id="hint" hidden>tap a cover to rename, move or delete it</p>
+  <div id="crumb" hidden></div>
+  <section id="curWrap" hidden><h2 class="sec">reading now</h2><div id="cur"></div><h2 class="sec">shelf</h2></section>
   <main id="shelf"></main>
+  <p id="vEmpty" hidden></p>
   <div id="empty" hidden>
     <div class="wm big">nothing here yet.</div>
     <p>Add EPUB or PDF files from the Files app.</p>
@@ -205,7 +248,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
   <div id="top" class="chrome">
     <button id="backBtn" class="l">library</button>
     <div class="mid" id="bookTitle"></div>
-    <div class="r"><button id="bmBtn" aria-label="bookmark"><svg width="15" height="19" viewBox="0 0 16 20"><path d="M2 1.5h12v17l-6-4.5-6 4.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button><button id="tocBtn">contents</button><button id="setBtn">settings</button></div>
+    <div class="r"><button id="srchBtn" aria-label="search in book"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="6"/><path d="M13 13l5 5"/></svg></button><button id="bmBtn" aria-label="bookmark"><svg width="15" height="19" viewBox="0 0 16 20"><path d="M2 1.5h12v17l-6-4.5-6 4.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button><button id="tocBtn">contents</button><button id="setBtn">settings</button></div>
   </div>
   <iframe id="frame" sandbox="allow-same-origin allow-scripts" title="book"></iframe>
   <div id="gesture"></div>
@@ -277,12 +320,12 @@ const THEMES = {
   document.head.append(st);
 }
 const THEME_MIGRATE = {espresso: 'cocoa', light: 'batter'};
-let S = {size:19, font:'serif', theme:'linen', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent'};
+let S = {size:19, font:'serif', theme:'linen', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0};
 try { Object.assign(S, JSON.parse(localStorage.getItem('alcove.settings') || '{}')); } catch (e) {}
 if (THEME_MIGRATE[S.theme]) S.theme = THEME_MIGRATE[S.theme];
 function saveSettings(){ try { localStorage.setItem('alcove.settings', JSON.stringify(S)); } catch (e) {} }
 const darkQ = matchMedia('(prefers-color-scheme: dark)');
-function theme(){ return S.theme === 'auto' ? (darkQ.matches ? 'cocoa' : 'linen') : (THEMES[S.theme] ? S.theme : 'linen'); }
+function theme(){ return S.theme === 'auto' ? (darkQ.matches ? 'graphite' : 'linen') : (THEMES[S.theme] ? S.theme : 'linen'); }
 function applyTheme(){
   const th = theme();
   document.body.dataset.theme = th;
@@ -571,11 +614,51 @@ async function loadLib(){
   lib = await dbAll(); sortLib(); renderLib();
   fixP = fixCovers().then(c => { if (c) renderLib(); }).catch(e => console.error(e)).finally(() => { fixP = null; });
 }
+const F = () => Array.isArray(S.folders) ? S.folders.filter(f => f && typeof f.id === 'string' && typeof f.name === 'string') : [];
+const bookFolder = b => F().some(f => f.id === b.folder) ? b.folder : '';
+const inView = b => { const f = bookFolder(b); return S.view === 'all' || (S.view === 'lib' ? !f : f === S.view); };
+function mkTile(b){
+  const tile = document.createElement('div'); tile.className = 'item';
+  const btn = document.createElement('button'); btn.className = 'tile';
+  const cover = document.createElement('div'); cover.className = 'cover';
+  const cb = anyCover(b);
+  if (cb){
+    const img = document.createElement('img'); const u = URL.createObjectURL(cb); coverUrls.push(u);
+    img.src = u; img.alt = ''; cover.append(img);
+  } else {
+    const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = b.title; cover.append(ph);
+  }
+  if (b.kind === 'pdf'){ const k = document.createElement('div'); k.className = 'kind'; k.textContent = 'pdf'; cover.append(k); }
+  if (b.pct > 0.005){
+    const bar = document.createElement('div'); bar.className = 'bar';
+    const i = document.createElement('i'); i.style.width = Math.min(100, b.pct * 100) + '%'; bar.append(i); cover.append(bar);
+  }
+  const t = document.createElement('div'); t.className = 't'; t.textContent = b.title;
+  const a = document.createElement('div'); a.className = 'a'; a.textContent = b.author;
+  btn.append(cover, t, a);
+  if (b.finishedAt){ const d = document.createElement('div'); d.className = 'd'; d.textContent = 'finished ' + fmtDate(b.finishedAt); btn.append(d); }
+  btn.onclick = () => { if (editing) openSheet('edit', b); else openBook(b.id); };
+  tile.append(btn);
+  if (editing){
+    const acts = document.createElement('div'); acts.className = 'acts';
+    const rn = document.createElement('button'); rn.className = 'rn'; rn.textContent = 'edit';
+    rn.onclick = () => openSheet('edit', b);
+    const rm = document.createElement('button'); rm.className = 'rm'; rm.textContent = 'delete';
+    rm.onclick = async () => {
+      if (!confirm('Delete "' + b.title + '" from alcove.? This removes it from this device.')) return;
+      await delBook(b.id); loadLib();
+    };
+    acts.append(rn, rm); tile.append(acts);
+  }
+  return tile;
+}
 function renderLib(){
   coverUrls.forEach(URL.revokeObjectURL); coverUrls = [];
   if (!lib.length) editing = false;
+  const fl = F();
+  if (S.view !== 'lib' && S.view !== 'all' && !fl.some(f => f.id === S.view)) S.view = 'lib';
   $('#hint').hidden = !editing;
-  const shelf = $('#shelf'); shelf.replaceChildren();
+  const shelf = $('#shelf'), cur = $('#cur'); shelf.replaceChildren(); cur.replaceChildren();
   const term = $('#search').value.trim().toLowerCase();
   $('#empty').hidden = lib.length > 0;
   $('#editBtn').hidden = lib.length === 0;
@@ -583,42 +666,61 @@ function renderLib(){
   renderBkNote();
   $('#editBtn').textContent = editing ? 'done' : 'edit';
   $('#search').hidden = lib.length < 6;
-  for (const b of lib){
-    if (term && !(b.title + ' ' + b.author).toLowerCase().includes(term)) continue;
-    const tile = document.createElement('div'); tile.className = 'item';
-    const btn = document.createElement('button'); btn.className = 'tile';
-    const cover = document.createElement('div'); cover.className = 'cover';
-    const cb = anyCover(b);
-    if (cb){
-      const img = document.createElement('img'); const u = URL.createObjectURL(cb); coverUrls.push(u);
-      img.src = u; img.alt = ''; cover.append(img);
-    } else {
-      const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = b.title; cover.append(ph);
-    }
-    if (b.kind === 'pdf'){ const k = document.createElement('div'); k.className = 'kind'; k.textContent = 'pdf'; cover.append(k); }
-    if (b.pct > 0.005){
-      const bar = document.createElement('div'); bar.className = 'bar';
-      const i = document.createElement('i'); i.style.width = Math.min(100, b.pct * 100) + '%'; bar.append(i); cover.append(bar);
-    }
-    const t = document.createElement('div'); t.className = 't'; t.textContent = b.title;
-    const a = document.createElement('div'); a.className = 'a'; a.textContent = b.author;
-    btn.append(cover, t, a);
-    if (b.finishedAt){ const d = document.createElement('div'); d.className = 'd'; d.textContent = 'finished ' + fmtDate(b.finishedAt); btn.append(d); }
-    btn.onclick = () => { if (editing) openSheet('edit', b); else openBook(b.id); };
-    tile.append(btn);
-    if (editing){
-      const acts = document.createElement('div'); acts.className = 'acts';
-      const rn = document.createElement('button'); rn.className = 'rn'; rn.textContent = 'rename';
-      rn.onclick = () => openSheet('edit', b);
-      const rm = document.createElement('button'); rm.className = 'rm'; rm.textContent = 'delete';
-      rm.onclick = async () => {
-        if (!confirm('Delete "' + b.title + '" from alcove.? This removes it from this device.')) return;
-        await delBook(b.id); loadLib();
-      };
-      acts.append(rn, rm); tile.append(acts);
-    }
-    shelf.append(tile);
-  }
+  const list = lib.filter(b => term ? (b.title + ' ' + b.author).toLowerCase().includes(term) : inView(b));
+  const crumb = $('#crumb'), fv = fl.find(f => f.id === S.view);
+  crumb.hidden = S.view === 'lib' || !lib.length || !!term;
+  crumb.textContent = (S.view === 'all' ? 'all books' : fv ? fv.name : '') + ' · ' + list.length;
+  let rest = list;
+  const reading = (!term && !editing && list.length > 3) ? list.filter(b => !b.finishedAt && b.pct > 0.005 && b.pct < 0.97)
+    .sort((x, y) => (lastRead(y) || 0) - (lastRead(x) || 0)).slice(0, 2) : [];
+  $('#curWrap').hidden = !reading.length;
+  if (reading.length){ rest = list.filter(b => !reading.includes(b)); reading.forEach(b => cur.append(mkTile(b))); }
+  rest.forEach(b => shelf.append(mkTile(b)));
+  const ve = $('#vEmpty');
+  ve.hidden = !(lib.length && !list.length);
+  ve.textContent = term ? 'no matches.' : S.view === 'lib' ? 'everything is filed in a folder. open the menu to find your books.' : 'nothing in here yet. tap edit, then a cover, to move books into this folder.';
+}
+/* =============== folders + sidebar =============== */
+function openSide(){ renderSide(); document.body.classList.add('side-open'); }
+function closeSide(){ document.body.classList.remove('side-open'); }
+function newFolder(){
+  const n = (prompt('Folder name') || '').trim().slice(0, 40); if (!n) return;
+  S.folders = F().concat({id: 'f' + Math.random().toString(36).slice(2, 8), name: n});
+  saveSettings(); renderSide(); toast('folder added. move books in from edit.');
+}
+function editFolder(f){
+  const n = prompt('Rename folder. Clear the name to delete it (its books go back to the library).', f.name);
+  if (n === null) return;
+  const t = n.trim().slice(0, 40);
+  if (!t){
+    if (!confirm('Delete the folder "' + f.name + '"? The books stay in alcove.')) return;
+    S.folders = F().filter(x => x.id !== f.id); if (S.view === f.id) S.view = 'lib';
+  } else S.folders = F().map(x => x.id === f.id ? {...x, name: t} : x);
+  saveSettings(); renderSide(); renderLib();
+}
+function renderSide(){
+  const box = $('#sideBody'); box.replaceChildren();
+  const mk = (cls, txt) => { const e = document.createElement('div'); e.className = cls; e.textContent = txt; return e; };
+  const row = (label, n, on, cur) => {
+    const b = document.createElement('button'); b.className = 'srow' + (cur ? ' cur' : '');
+    const l = document.createElement('span'); l.textContent = label;
+    const c = document.createElement('span'); c.className = 'n'; c.textContent = n;
+    b.append(l, c); b.onclick = on; return b;
+  };
+  const pick = v => () => { S.view = v; saveSettings(); closeSide(); renderLib(); $('#lib').scrollTop = 0; };
+  box.append(row('library', lib.filter(b => !bookFolder(b)).length, pick('lib'), S.view === 'lib'),
+             row('all books', lib.length, pick('all'), S.view === 'all'), mk('slbl', 'folders'));
+  F().forEach(f => {
+    const w = document.createElement('div'); w.className = 'sfold';
+    const m = document.createElement('button'); m.className = 'sdots'; m.textContent = '···'; m.setAttribute('aria-label', 'rename or delete folder');
+    m.onclick = () => editFolder(f);
+    w.append(row(f.name, lib.filter(b => bookFolder(b) === f.id).length, pick(f.id), S.view === f.id), m); box.append(w);
+  });
+  const nf = row('+ new folder', '', newFolder, false); nf.classList.add('dimrow');
+  box.append(nf, mk('slbl', 'more'),
+    row('reading stats', '', () => { closeSide(); openSheet('stats'); }, false),
+    row('settings', '', () => { closeSide(); openSheet('app'); }, false),
+    row('backup & restore', '', () => { closeSide(); openSheet('backup'); }, false));
 }
 async function delBook(id){
   await dbDel('books', id); await dbDel('files', id);
@@ -665,6 +767,7 @@ const frame = $('#frame');
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function showView(v){
+  closeSide();
   $('#lib').hidden = v !== 'lib';
   $('#reader').hidden = v !== 'reader';
 }
@@ -886,6 +989,7 @@ frame.addEventListener('load', async () => {
   R.doc = d; R.wrap = d.getElementById('a-wrap');
   bindDoc(d);
   d.querySelectorAll('.a-ch').forEach(hlApply);
+  if (R.find && R.find.i === R.i){ findShow(R.find); R.find = null; }
   const imgs = [...d.images].filter(im => !im.complete);
   if (imgs.length){
     await Promise.race([Promise.all(imgs.map(im => new Promise(r => { im.onload = im.onerror = r; }))), new Promise(r => setTimeout(r, 1500))]);
@@ -905,7 +1009,7 @@ function armSettle(tok){
   setTimeout(again, 700);
   setTimeout(() => { if (tok !== R.token) return; again(); R.settle = null; if (!R.ready){ R.ready = true; flushSave(); } }, 2500);
 }
-function userMoved(){ R.settle = null; R.ready = true; }
+function userMoved(){ R.settle = null; R.ready = true; actAt = Date.now(); findClear(); }
 document.addEventListener('keydown', userMoved, true);
 document.addEventListener('pointerdown', userMoved, true);
 
@@ -936,6 +1040,7 @@ function docCss(){
   #a-wrap li{margin:.2em 0}
   #a-wrap mark.a-hl{color:inherit!important;border-radius:2px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
   ${HLS.map((c, i) => `#a-wrap mark.c${i}{background:${hlRgba(i, t.hlA)}!important}`).join('\n  ')}
+  #a-wrap mark.a-find{background:${t.sel}!important;color:inherit!important;border-radius:2px}
   ::selection{background:${t.sel}}`;
   if (paged){
     const cw = w - 2 * px;
@@ -1092,13 +1197,14 @@ function overall(){
 }
 let saveTimer, mkTimer;
 function progress(){
+  actAt = Date.now();
   let p, label;
   if (R.kind === 'pdf'){ p = P.n ? ((P.cur - 1) + P.frac) / P.n : 0; label = 'page ' + P.cur + ' of ' + P.n; }
   else { p = overall(); label = chapterLabel(); }
   const pct = Math.round(p * 100) + '%';
   $('#pct').textContent = pct; $('#chap').textContent = label;
   $('#slider').value = Math.round(p * 1000);
-  $('#sl1').textContent = label; $('#sl2').textContent = pct;
+  $('#sl1').textContent = label; $('#sl2').textContent = pct + (R.kind === 'pdf' || !R.book ? '' : ' · ' + timeLeftTxt());
   clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 600);
   clearTimeout(mkTimer); mkTimer = setTimeout(refreshMark, 300);
 }
@@ -1210,6 +1316,131 @@ function bindDoc(d){
     if (S.layout !== 'scroll' || R.raf) return;
     R.raf = requestAnimationFrame(() => { R.raf = 0; scrollUpdate(); extend(); });
   }, {passive: true});
+}
+
+/* =============== search in book =============== */
+const fold = t => t.replace(/[\u2018\u2019\u201B]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\u00A0/g, ' ').toLowerCase();
+let srchTok = 0, lastQ = '';
+async function chText(i){
+  const bk = R.book; bk.txt = bk.txt || new Map();
+  if (bk.txt.has(i)) return bk.txt.get(i);
+  let raw = '';
+  try {
+    const d = new DOMParser().parseFromString(await bk.zip.text(bk.spine[i].path), 'text/html');
+    d.querySelectorAll('script,link,style,iframe,object,embed,meta,base,audio,video,form,frame,frameset').forEach(n => n.remove());
+    raw = d.body ? d.body.textContent : '';
+  } catch (e) {}
+  const v = {raw, low: fold(raw)}; bk.txt.set(i, v); return v;
+}
+async function pageText(n){
+  P.txt = P.txt || new Map();
+  if (P.txt.has(n)) return P.txt.get(n);
+  let raw = '';
+  try { const tc = await (await P.doc.getPage(n)).getTextContent(); raw = tc.items.map(x => x.str).join(' ').replace(/\s+/g, ' '); } catch (e) {}
+  const v = {raw, low: fold(raw)}; P.txt.set(n, v); return v;
+}
+function findClear(){
+  const d = R.doc; if (!d) return;
+  try { d.querySelectorAll('mark.a-find').forEach(m => m.replaceWith(...m.childNodes)); } catch (e) {}
+}
+function findShow(f){
+  const d = R.doc; if (!d) return;
+  findClear();
+  const sec = d.querySelector('.a-ch[data-i="' + f.i + '"]'); if (!sec) return;
+  const a = textPos(sec, f.off, false), b = textPos(sec, f.off + f.len, true); if (!a || !b) return;
+  try { const r = d.createRange(); r.setStart(a.n, a.o); r.setEnd(b.n, b.o); const m = d.createElement('mark'); m.className = 'a-find'; r.surroundContents(m); } catch (e) {}
+}
+function openFound(h){
+  closeSheet(); setChrome(false);
+  R.back.push(R.kind === 'pdf' ? {page: P.cur, frac: P.frac} : {i: R.i, frac: R.frac});
+  $('#backpill').hidden = false; clearTimeout(R.pillT); R.pillT = setTimeout(clearBack, 9000);
+  if (R.kind === 'pdf'){ pdfGoto(h.i + 1, 0); return; }
+  const tok = R.token; R.find = {i: h.i, off: h.off, len: h.len};
+  gotoChapter(h.i, {off: h.off}, false);
+  if (R.token === tok){ findShow(R.find); R.find = null; }
+}
+async function runSearch(q, res, st){
+  const tok = ++srchTok; res.replaceChildren(); lastQ = q;
+  const needle = fold(q.trim());
+  if (needle.length < 2){ st.textContent = needle ? 'keep typing…' : ''; return; }
+  const pdf = R.kind === 'pdf', total = pdf ? P.n : R.book.spine.length;
+  let count = 0;
+  for (let i = 0; i < total && count < 150; i++){
+    if (tok !== srchTok) return;
+    st.textContent = 'searching… ' + Math.round(i / total * 100) + '%';
+    const t = pdf ? await pageText(i + 1) : await chText(i);
+    if (tok !== srchTok) return;
+    let at = 0, k;
+    while ((k = t.low.indexOf(needle, at)) >= 0 && count < 150){
+      at = k + needle.length; count++;
+      const h = {i, off: k, len: needle.length};
+      const b = document.createElement('button'); b.className = 'toc';
+      const bf = t.raw.slice(Math.max(0, k - 45), k).replace(/\s+/g, ' ').replace(/^\S*\s/, ''), af = t.raw.slice(k + needle.length, k + needle.length + 60).replace(/\s+/g, ' ');
+      const em = document.createElement('b'); em.textContent = t.raw.slice(k, k + needle.length);
+      b.append('…' + bf, em, af + '…');
+      const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = pdf ? 'Page ' + (i + 1) : (labelFor(i) || 'Section ' + (i + 1));
+      b.append(sub); b.onclick = () => openFound(h); res.append(b);
+    }
+  }
+  st.textContent = count ? (count >= 150 ? 'first 150 results' : count + (count === 1 ? ' result' : ' results')) : 'no results';
+}
+function buildSearch(list){
+  list.innerHTML = '<div class="form"><input id="qIn" type="search" placeholder="search this book" autocomplete="off" autocapitalize="off" enterkeyhint="search"><div id="qSt" class="qst"></div></div><div id="qRes"></div>';
+  const inp = list.querySelector('#qIn'), st = list.querySelector('#qSt'), res = list.querySelector('#qRes');
+  let tm; inp.value = lastQ;
+  inp.oninput = () => { clearTimeout(tm); tm = setTimeout(() => runSearch(inp.value, res, st), 350); };
+  inp.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); clearTimeout(tm); runSearch(inp.value, res, st); inp.blur(); } };
+  if (lastQ) runSearch(lastQ, res, st);
+  setTimeout(() => { if (!lastQ) inp.focus(); }, 320);
+}
+$('#srchBtn').onclick = e => { e.stopPropagation(); sheetTab = 'search'; openSheet('toc'); };
+
+/* =============== reading stats =============== */
+const dayKey = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const DAYS = () => (S.days && typeof S.days === 'object' && !Array.isArray(S.days)) ? S.days : (S.days = {});
+const fmtDur = s => { const m = Math.round(s / 60); if (m < 1) return '<1m'; const h = Math.floor(m / 60), r = m % 60; return h ? (r ? h + 'h ' + r + 'm' : h + 'h') : m + 'm'; };
+let actAt = 0, tickN = 0, lastBP = null;
+const bytePos = () => R.book ? R.book.spine[R.i].start + R.book.spine[R.i].w * R.frac : 0;
+const speed = () => (S.rdT > 600 && S.rdB > 0) ? Math.max(8, Math.min(150, S.rdB / S.rdT)) : 30;
+function timeLeftTxt(){
+  if (!R.book) return '';
+  return fmtDur(Math.max(0, R.book.total - bytePos()) / speed()) + ' left';
+}
+setInterval(() => {
+  if (document.hidden || !R.meta || !R.kind || $('#reader').hidden || Date.now() - actAt > 120000){ lastBP = null; return; }
+  R.meta.secs = (R.meta.secs || 0) + 5;
+  const dd = DAYS(), k = dayKey(); dd[k] = (dd[k] || 0) + 5;
+  if (R.kind !== 'pdf' && R.book && R.ready){
+    const bp = bytePos(); S.rdT = (S.rdT || 0) + 5;
+    if (lastBP !== null){ const d = bp - lastBP; if (d > 0 && d < 6000) S.rdB = (S.rdB || 0) + d; }
+    lastBP = bp;
+  }
+  if (++tickN % 6 === 0){
+    const ks = Object.keys(dd).sort(); while (ks.length > 400) delete dd[ks.shift()];
+    saveSettings(); dbPut('books', R.meta).catch(() => {});
+  }
+}, 5000);
+function streak(){
+  const d = DAYS(), c = new Date(); let n = 0;
+  if ((d[dayKey(c)] || 0) < 60) c.setDate(c.getDate() - 1);
+  while ((d[dayKey(c)] || 0) >= 60){ n++; c.setDate(c.getDate() - 1); }
+  return n;
+}
+function buildStats(body){
+  const d = DAYS(), now = new Date(), days = [];
+  for (let k = 6; k >= 0; k--){ const c = new Date(now); c.setDate(c.getDate() - k); days.push({l: 'SMTWTFS'[c.getDay()], v: d[dayKey(c)] || 0}); }
+  const week = days.reduce((a, x) => a + x.v, 0), max = Math.max(60, ...days.map(x => x.v));
+  let month = 0; for (let k = 0; k < 30; k++){ const c = new Date(now); c.setDate(c.getDate() - k); month += d[dayKey(c)] || 0; }
+  const yr = now.getFullYear(), fin = lib.filter(b => b.finishedAt && new Date(b.finishedAt).getFullYear() === yr).length;
+  const total = lib.reduce((a, b) => a + (b.secs || 0), 0), st = streak();
+  const card = (v, l) => `<div class="scard"><b>${v}</b><span>${l}</span></div>`;
+  body.innerHTML = `<div class="stats"><div class="sgrid">${card(fmtDur(d[dayKey()] || 0), 'today')}${card(st + (st === 1 ? ' day' : ' days'), 'reading streak')}${card(fmtDur(week), 'last 7 days')}${card(fmtDur(month), 'last 30 days')}${card(fin, 'finished in ' + yr)}${card(fmtDur(total), 'all time')}</div>
+    <div class="sbars">${days.map(x => `<div><i style="height:${Math.round(x.v / max * 100)}%"></i>${x.l}</div>`).join('')}</div>
+    <h3>most read</h3><div id="stBooks"></div></div>`;
+  const box = body.querySelector('#stBooks');
+  const top = lib.filter(b => b.secs > 0).sort((a, b) => b.secs - a.secs).slice(0, 5);
+  if (!top.length) box.innerHTML = '<div class="sbk"><span>time is tracked while you read. nothing yet.</span></div>';
+  top.forEach(b => { const r = document.createElement('div'); r.className = 'sbk'; const a = document.createElement('span'); a.textContent = b.title; const c = document.createElement('span'); c.textContent = fmtDur(b.secs); r.append(a, c); box.append(r); });
 }
 
 /* =============== bookmarks + highlights =============== */
@@ -1457,8 +1688,9 @@ function endSel(){
 let sheetTab = 'contents';
 function buildContents(body){
   body.replaceChildren();
-  const names = R.kind === 'pdf' ? ['contents', 'bookmarks', 'details'] : ['contents', 'bookmarks', 'highlights', 'details'];
+  const names = R.kind === 'pdf' ? ['contents', 'search', 'bookmarks', 'details'] : ['contents', 'search', 'bookmarks', 'highlights', 'details'];
   if (!names.includes(sheetTab)) sheetTab = 'contents';
+  $('#sheet').classList.toggle('top', sheetTab === 'search');
   const tabs = document.createElement('div'); tabs.className = 'tabs';
   names.forEach(n => {
     const b = document.createElement('button'); b.textContent = n; b.className = n === sheetTab ? 'on' : '';
@@ -1468,6 +1700,7 @@ function buildContents(body){
   const list = document.createElement('div');
   body.append(tabs, list);
   if (sheetTab === 'contents') buildToc(list);
+  else if (sheetTab === 'search') buildSearch(list);
   else if (sheetTab === 'bookmarks') buildBookmarks(list, body);
   else if (sheetTab === 'details') buildDetails(list);
   else buildHighlights(list, body);
@@ -1725,11 +1958,12 @@ async function buildZip(entries, onProg){
   return new Blob([...parts, ...cd, end.buffer], {type: 'application/octet-stream'});
 }
 
-const BK_KEYS = ['added', 'opened', 'startedAt', 'lastReadAt', 'finishedAt', 'pct', 'v'];
+const BK_KEYS = ['added', 'opened', 'startedAt', 'lastReadAt', 'finishedAt', 'pct', 'v', 'secs'];
 function plainMeta(m){
   const o = {id: m.id, sig: m.sig || '', kind: m.kind === 'pdf' ? 'pdf' : 'epub', title: m.title || '', author: m.author || ''};
   BK_KEYS.forEach(k => { o[k] = Number(m[k]) || 0; });
   o.finishedCleared = !!m.finishedCleared; o.legacy = !!m.legacy;
+  o.folder = typeof m.folder === 'string' ? m.folder : '';
   o.pos = bestPos(m); o.bm = m.bm || []; o.hl = m.hl || [];
   return o;
 }
@@ -1744,6 +1978,7 @@ function cleanRec(r){
   const ok = x => x && typeof x === 'object' && typeof x.id === 'string';
   o.bm = Array.isArray(r.bm) ? r.bm.filter(ok) : [];
   o.hl = Array.isArray(r.hl) ? r.hl.filter(ok) : [];
+  o.folder = typeof r.folder === 'string' ? r.folder.slice(0, 40) : '';
   o.file = typeof r.file === 'string' && /^files\/[\w.\-]+$/.test(r.file) ? r.file : '';
   o.cover = typeof r.cover === 'string' && /^covers\/[\w.\-]+$/.test(r.cover) ? r.cover : '';
   return o;
@@ -1827,6 +2062,8 @@ function mergeInto(a, b){
   if (a.finishedAt) a.finishedCleared = false;
   const union = (x, y) => { const seen = new Set((x || []).map(i => i.id)); return (x || []).concat((y || []).filter(i => !seen.has(i.id))); };
   a.bm = union(a.bm, b.bm); a.hl = union(a.hl, b.hl);
+  if (!a.folder && b.folder) a.folder = b.folder;
+  a.secs = Math.max(a.secs || 0, b.secs || 0);
   a.v = 2;
 }
 async function applyImport(pkg, mode){
@@ -1943,6 +2180,7 @@ function openSheet(kind, arg){
   if (kind === 'toc'){ $('#sheetTitle').textContent = R.meta ? R.meta.title : 'contents'; buildContents(body); }
   else if (kind === 'edit'){ $('#sheetTitle').textContent = 'edit details'; buildEdit(body, arg); }
   else if (kind === 'backup'){ BK = {}; $('#sheetTitle').textContent = 'backup & restore'; buildBackup(body); }
+  else if (kind === 'stats'){ $('#sheetTitle').textContent = 'reading stats'; buildStats(body); }
   else if (kind === 'sort'){ $('#sheetTitle').textContent = 'sort shelf'; buildSort(body); }
   else if (kind === 'app'){ $('#sheetTitle').textContent = 'settings'; buildAppSettings(body); }
   else { $('#sheetTitle').textContent = 'reading settings'; buildSettings(body); }
@@ -2016,16 +2254,23 @@ function buildEdit(body, b){
   body.innerHTML = `<div class="form">
     <label for="eTitle">title</label><input id="eTitle" autocomplete="off" autocapitalize="words" enterkeyhint="next">
     <label for="eAuthor">author</label><input id="eAuthor" autocomplete="off" autocapitalize="words" enterkeyhint="done">
+    ${F().length ? '<label for="eFolder">folder</label><select id="eFolder"></select>' : ''}
     ${datesHtml()}
     <div class="btns"><button id="eCancel">cancel</button><button id="eSave" class="primary">save</button></div>
     <button id="eDelete" class="danger">delete book</button></div>`;
   const ti = body.querySelector('#eTitle'), au = body.querySelector('#eAuthor');
   ti.value = b.title; au.value = b.author || '';
+  const fs = body.querySelector('#eFolder');
+  if (fs){
+    fs.append(new Option('none (library)', ''));
+    F().forEach(f => fs.append(new Option(f.name, f.id)));
+    fs.value = bookFolder(b);
+  }
   const applyDates = bindDates(body, b, false);
   const save = async () => {
     const t = ti.value.trim();
     if (!t){ toast("title can't be empty"); return; }
-    b.title = t; b.author = au.value.trim(); applyDates();
+    b.title = t; b.author = au.value.trim(); if (fs) b.folder = fs.value; applyDates();
     try { await dbPut('books', b); } catch (e) { toast("couldn't save that"); return; }
     closeSheet(); renderLib();
   };
@@ -2042,7 +2287,7 @@ function buildEdit(body, b){
 function themeSwatches(){
   const sw = (k, label, inner) => `<button class="sw" data-val="${k}" aria-label="${label}"><i class="swc" style="${inner}"></i><span>${label}</span></button>`;
   return Object.entries(THEMES).map(([k, t]) => sw(k, t.label, `background:${t.bg};--r:${t.accent}`)).join('') +
-    sw('auto', 'auto', `background:linear-gradient(135deg,${THEMES.linen.bg} 50%,${THEMES.cocoa.bg} 50%);--r:${THEMES.linen.accent}`);
+    sw('auto', 'auto', `background:linear-gradient(135deg,${THEMES.linen.bg} 50%,${THEMES.graphite.bg} 50%);--r:${THEMES.linen.accent}`);
 }
 function bindSettings(body){
   const sync = () => {
@@ -2085,6 +2330,8 @@ $('#addBtn').onclick = $('#addBtn2').onclick = () => $('#file').click();
 $('#file').onchange = e => { const f = e.target.files; if (f && f.length) addFiles(f); e.target.value = ''; };
 $('#sortBtn').onclick = () => openSheet('sort');
 $('#appSetBtn').onclick = () => openSheet('app');
+$('#menuBtn').onclick = openSide;
+$('#scrim').onclick = closeSide;
 $('#editBtn').onclick = () => { editing = !editing; renderLib(); };
 $('#search').oninput = renderLib;
 $('#backBtn').onclick = () => closeBook();
@@ -2240,10 +2487,16 @@ addEventListener('popstate', () => {
   if (!$('#sheet').hidden){ closeSheet(); try { history.pushState({r: 1}, ''); } catch (e) {} return; }
   closeBook(true);
 });
-addEventListener('pagehide', flushSave);
-document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
+addEventListener('pagehide', () => { flushSave(); saveSettings(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden){ flushSave(); saveSettings(); } });
 
 applyTheme();
+{
+  let last = null; try { last = localStorage.getItem('alcove.last'); } catch (e) {}
+  const sp = $('#splash');
+  if (last) sp.remove();
+  else { sp.hidden = false; setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 450); }, 800); }
+}
 loadLib().then(() => {
   let last = null;
   try { last = localStorage.getItem('alcove.last'); } catch (e) {}
