@@ -872,10 +872,10 @@ async function closeBook(fromPop){
 
 /* =============== publisher styling (filtered, scoped per chapter) =============== */
 function lenEm(v, lo, hi){
-  const m = /^(-?\d*\.?\d+)(em|rem|px|pt|%|ex|ch)?$/i.exec(String(v).trim());
+  const m = /^(-?\d*\.?\d+)(em|rem|px|pt|%|ex|ch|in|cm|mm|pc)?$/i.exec(String(v).trim());
   if (!m) return false;
   let n = parseFloat(m[1]); const u = (m[2] || 'px').toLowerCase();
-  if (u === 'px') n /= 16; else if (u === 'pt') n /= 12; else if (u === '%') n *= .22; else if (u === 'ex' || u === 'ch') n *= .5;
+  if (u === 'px') n /= 16; else if (u === 'pt') n /= 12; else if (u === '%') n *= .22; else if (u === 'ex' || u === 'ch') n *= .5; else if (u === 'in') n *= 6; else if (u === 'cm') n *= 2.362; else if (u === 'mm') n *= .2362; else if (u === 'pc') n *= .75;
   return (Math.round(Math.max(lo, Math.min(hi, n)) * 100) / 100) + 'em';
 }
 const kw = re => v => re.test(v) && v;
@@ -891,9 +891,9 @@ const CSS_KEEP = {
   'vertical-align': kw(/^(super|sub|baseline)$/i),
   'white-space': v => /^(pre|pre-wrap|pre-line|normal)$/i.test(v) && (v === 'pre' ? 'pre-wrap' : v),
   'list-style-type': kw(/^(disc|circle|square|decimal|lower-alpha|upper-alpha|lower-roman|upper-roman|none)$/i),
-  'text-indent': v => lenEm(v, -3, 3),
-  'margin-left': v => lenEm(v, -1, 4), 'margin-right': v => lenEm(v, 0, 4),
-  'padding-left': v => lenEm(v, 0, 4), 'padding-right': v => lenEm(v, 0, 4),
+  'text-indent': v => lenEm(v, -4, 4),
+  'margin-left': v => lenEm(v, -1, 8), 'margin-right': v => lenEm(v, 0, 6),
+  'padding-left': v => lenEm(v, 0, 8), 'padding-right': v => lenEm(v, 0, 6),
   'margin-top': v => lenEm(v, 0, 3), 'margin-bottom': v => lenEm(v, 0, 3),
   'letter-spacing': v => lenEm(v, -.05, .3),
   'font-size': v => {
@@ -904,12 +904,13 @@ const CSS_KEEP = {
     return Math.max(.6, Math.min(2.6, n)) + 'em';
   }
 };
+const CSS_ALIAS = {'margin-inline-start': 'margin-left', 'margin-inline-end': 'margin-right', 'padding-inline-start': 'padding-left', 'padding-inline-end': 'padding-right', 'margin-block-start': 'margin-top', 'margin-block-end': 'margin-bottom', '-webkit-margin-start': 'margin-left', '-webkit-padding-start': 'padding-left'};
 function cleanDecl(st, alignOnly){
   const out = [];
   for (let k = 0; k < st.length; k++){
-    const p = st[k], f = CSS_KEEP[p];
+    const p = CSS_ALIAS[st[k]] || st[k], f = CSS_KEEP[p];
     if (!f || (alignOnly && p !== 'text-align')) continue;
-    const v = f(st.getPropertyValue(p).trim());
+    const v = f(st.getPropertyValue(st[k]).trim());
     if (v) out.push(p + ':' + v);
   }
   return out.join(';');
@@ -918,19 +919,31 @@ function cleanCss(text){
   let sheet;
   try { sheet = new CSSStyleSheet(); sheet.replaceSync(text); } catch (e) { return ''; }
   const out = [];
-  for (const r of sheet.cssRules){
-    if (r.type !== 1) continue;
-    const a = [], b = [];
-    for (let sel of r.selectorText.split(/,(?![^(]*\))/)){
-      sel = sel.trim();
-      if (!sel || /::|:root|:(first-letter|first-line|before|after)|^\*$/i.test(sel)) continue;
-      const rest = sel.replace(/^html\b\s*/i, '').replace(/^body\b\s*/i, '').replace(/^>\s*/, '');
-      if (!rest && /^(html|body)\b/i.test(sel)) b.push('@@'); else if (rest) a.push('@@ ' + rest);
+  const walk = rules => {
+    for (const r of rules){
+      if (r.type === 4){ if (/^(|all|screen|only screen|not all)$/i.test(r.media.mediaText.trim())) walk(r.cssRules); continue; }
+      if (r.type !== 1) continue;
+      const a = [], b = [];
+      for (let sel of r.selectorText.split(/,(?![^(]*\))/)){
+        sel = sel.trim();
+        if (!sel || /::|:root|:(first-letter|first-line|before|after)|^\*$/i.test(sel)) continue;
+        const wasHtml = /^html\b/i.test(sel);
+        sel = sel.replace(/^html\b\s*/i, '');
+        const bm = /^body((?:[.#\[][^\s>+~]*)*)\s*/i.exec(sel);
+        if (bm){ const lead = '@@' + bm[1], rest = sel.slice(bm[0].length).replace(/^>\s*/, ''); if (rest) a.push(lead + ' ' + rest); else b.push(lead); }
+        else if (!sel){ if (wasHtml) b.push('@@'); }
+        else {
+          const sl = sel.replace(/^>\s*/, ''), m = /^(\.[\w-]+)\s*>?\s+(.+)$/.exec(sl);
+          a.push('@@ ' + sl);
+          if (m) a.push('@@' + m[1] + ' ' + m[2]); else if (/^\.[\w-]+$/.test(sl)) b.push('@@' + sl);
+        }
+      }
+      const full = a.length ? cleanDecl(r.style) : '', al = b.length ? cleanDecl(r.style, true) : '';
+      if (full) out.push(a.join(',') + '{' + full + '}');
+      if (al) out.push(b.join(',') + '{' + al + '}');
     }
-    const full = a.length ? cleanDecl(r.style) : '', al = b.length ? cleanDecl(r.style, true) : '';
-    if (full) out.push(a.join(',') + '{' + full + '}');
-    if (al) out.push(b.join(',') + '{' + al + '}');
-  }
+  };
+  walk(sheet.cssRules);
   return out.join('\n');
 }
 async function pubCss(doc, dir){
@@ -984,9 +997,9 @@ async function chapterHtml(i){
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const css = (await rewrite(doc, item.path)).split('@@').join('#a-wrap .a-ch[data-i="' + i + '"]');
   const lang = (doc.documentElement.getAttribute('lang') || doc.documentElement.getAttribute('xml:lang') || 'en').replace(/[^a-zA-Z-]/g, '');
-  return {body: doc.body ? doc.body.innerHTML : '', lang, css};
+  return {body: doc.body ? doc.body.innerHTML : '', lang, css, cls: (doc.body ? doc.body.className || '' : '').replace(/[^\w -]/g, '').trim()};
 }
-const section = (i, body) => `<section class="a-ch" data-i="${i}">${body}</section>`;
+const section = (i, body, cls) => `<section class="a-ch${cls ? ' ' + cls : ''}" data-i="${i}">${body}</section>`;
 function preload(html){
   const urls = [...new Set(html.match(/blob:[^"'\s)]+/g) || [])];
   return Promise.race([
@@ -1003,7 +1016,7 @@ async function loadChapter(i, target){
   if (tok !== R.token) return;
   R.docLayout = S.layout;
   frame.style.opacity = 0;
-  frame.srcdoc = `<!doctype html><html lang="${ch.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="a-css"></style><style>${ch.css}</style></head><body><div id="a-wrap">${section(i, ch.body)}</div></body></html>`;
+  frame.srcdoc = `<!doctype html><html lang="${ch.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="a-css"></style><style>${ch.css}</style></head><body><div id="a-wrap">${section(i, ch.body, ch.cls)}</div></body></html>`;
 }
 frame.addEventListener('load', async () => {
   const d = frame.contentDocument;
@@ -1176,7 +1189,7 @@ async function extend(){
       const ch = await chapterHtml(R.hi + 1);
       if (tok !== R.token || R.doc !== d) return;
       addPub(d, ch.css);
-      wrap.insertAdjacentHTML('beforeend', section(R.hi + 1, ch.body));
+      wrap.insertAdjacentHTML('beforeend', section(R.hi + 1, ch.body, ch.cls));
       hlApply(wrap.querySelector('.a-ch[data-i="' + (R.hi + 1) + '"]'));
       R.hi++;
       if (R.hi === n - 1) wrap.insertAdjacentHTML('beforeend', '<div id="a-endmark">the end</div>');
@@ -1188,7 +1201,7 @@ async function extend(){
       if (tok !== R.token || R.doc !== d) return;
       addPub(d, ch.css);
       const h0 = se.scrollHeight;
-      wrap.insertAdjacentHTML('afterbegin', section(R.lo - 1, ch.body));
+      wrap.insertAdjacentHTML('afterbegin', section(R.lo - 1, ch.body, ch.cls));
       hlApply(wrap.querySelector('.a-ch[data-i="' + (R.lo - 1) + '"]'));
       se.scrollTop += se.scrollHeight - h0;
       R.lo--;
