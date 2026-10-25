@@ -87,6 +87,9 @@ body.side-open #side{transform:none}body.side-open #scrim{opacity:1;pointer-even
 .mrow .nm{flex:1;min-width:0;padding:13px 0;text-align:left;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mrow.cur .nm{color:var(--accent)}.mrow .x{padding:10px 2px 10px 14px;color:var(--dim);font-size:20px}
 #musBtn.on{color:var(--accent)}.mnote{font-size:12px;color:var(--dim);margin:12px 0 0;line-height:1.4}
+#noteCard{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:50;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.28);padding:14px 16px 8px;max-height:46vh;display:flex;flex-direction:column}
+#noteCard[hidden]{display:none}#noteCard .nt{overflow-y:auto;font-size:15px;line-height:1.5;-webkit-overflow-scrolling:touch}
+#noteCard .na{display:flex;justify-content:flex-end;gap:18px;margin-top:6px}#noteCard .na button{padding:8px 2px;font-size:14px;color:var(--dim)}#noteCard #noteGo{color:var(--accent)}
 #splash{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;transition:opacity .4s ease}
 #splash[hidden]{display:none}#splash.out{opacity:0;pointer-events:none}
 #splash .wm{font-size:58px;animation:spIn .7s ease both}
@@ -203,6 +206,8 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 #reader[data-kind=pdf] #frame,#reader[data-kind=pdf] #gesture,#reader[data-kind=pdf] #selLayer{display:none!important}
 .kind{position:absolute;top:6px;left:6px;font-size:10px;letter-spacing:.08em;background:rgba(0,0,0,.7);color:#fff;padding:2px 6px;border-radius:4px;text-transform:uppercase}
 #hlDots{display:flex;gap:6px}
+#hlbar{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);row-gap:2px;border-radius:22px}
+@media (max-width:520px){#hlDots{flex-basis:100%;justify-content:center}}
 #hlbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 58px);z-index:15;display:flex;align-items:center;gap:6px;
   padding:7px 12px;border-radius:28px;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.35)}
 #hlbar button{font-size:13px;padding:6px 6px;color:var(--fg)}
@@ -211,7 +216,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 #hlbar .dot{width:28px;height:28px;padding:0;border-radius:50%;border:2px solid transparent;margin:0 2px}
 #hlbar .dot.on{border-color:var(--fg)}
 #hlbar #hlDel{color:var(--danger)}
-#hlbar[data-mode=new] #hlDel{display:none}
+#hlbar[data-mode=new] #hlDel,#hlbar[data-mode=new] #hlNote{display:none}
 .tabs{display:flex;position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);z-index:1}
 .tabs button{flex:1;padding:12px 0;font-size:14px;color:var(--dim)}
 .tabs button.on{color:var(--fg);font-weight:600;box-shadow:inset 0 -2px 0 var(--fg)}
@@ -226,6 +231,28 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
   opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.on{opacity:1}
 </style>
+<link rel="apple-touch-startup-image" href="splash/l-750x1334.png" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-750x1334.png" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-828x1792.png" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-828x1792.png" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1125x2436.png" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1125x2436.png" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1242x2688.png" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1242x2688.png" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1080x2340.png" media="(device-width:360px) and (device-height:780px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1080x2340.png" media="(device-width:360px) and (device-height:780px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1170x2532.png" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1170x2532.png" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1179x2556.png" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1179x2556.png" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1206x2622.png" media="(device-width:402px) and (device-height:874px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1206x2622.png" media="(device-width:402px) and (device-height:874px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1284x2778.png" media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1284x2778.png" media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1290x2796.png" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1290x2796.png" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
+<link rel="apple-touch-startup-image" href="splash/l-1320x2868.png" media="(device-width:440px) and (device-height:956px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:light)">
+<link rel="apple-touch-startup-image" href="splash/d-1320x2868.png" media="(device-width:440px) and (device-height:956px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait) and (prefers-color-scheme:dark)">
 </head>
 <body data-theme="linen">
 
@@ -283,8 +310,9 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 </div>
 <div id="hlbar" hidden data-mode="new">
   <span id="hlDots"></span>
-  <button id="hlLook">look up</button><button id="hlCopy">copy</button><button id="hlShare">share</button><button id="hlDel">delete</button><button id="hlX" aria-label="close">&times;</button>
+  <button id="hlLook">look up</button><button id="hlCopy">copy</button><button id="hlShare">share</button><button id="hlNote">note</button><button id="hlDel">delete</button><button id="hlX" aria-label="close">&times;</button>
 </div>
+<div id="noteCard" hidden><div class="nt"></div><div class="na"><button id="noteGo">go to note</button><button id="noteX">close</button></div></div>
 <div id="toast"></div>
 <div id="lb" hidden><button id="lbClose">done</button><div id="lbWrap"><img id="lbImg" alt=""></div></div>
 
@@ -336,7 +364,7 @@ const THEMES = {
   document.head.append(st);
 }
 const THEME_MIGRATE = {espresso: 'cocoa', light: 'batter'};
-let S = {size:19, font:'serif', theme:'linen', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:''};
+let S = {size:19, font:'serif', theme:'linen', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:'', tapz:'normal'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('alcove.settings') || '{}')); } catch (e) {}
 if (THEME_MIGRATE[S.theme]) S.theme = THEME_MIGRATE[S.theme];
 function saveSettings(){ try { localStorage.setItem('alcove.settings', JSON.stringify(S)); } catch (e) {} }
@@ -1077,6 +1105,7 @@ function docCss(){
   #a-wrap li{margin:.2em 0}
   #a-wrap mark.a-hl{color:inherit!important;border-radius:2px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
   ${HLS.map((c, i) => `#a-wrap mark.c${i}{background:${hlRgba(i, t.hlA)}!important}`).join('\n  ')}
+  #a-wrap mark.a-hl[data-note]{border-bottom:2px dotted ${t.dim}}
   #a-wrap mark.a-find{background:${t.sel}!important;color:inherit!important;border-radius:2px}
   ::selection{background:${t.sel}}`;
   if (paged){
@@ -1293,13 +1322,42 @@ function tap(x){
   if (S.layout === 'pages'){
     const w = R.geo.w;
     if ($('#reader').classList.contains('show')) return setChrome(false);
-    if (x < w * 0.3) prev(); else if (x > w * 0.7) next(); else setChrome(true);
+    const z = ({narrow: .2, normal: .3, wide: .4})[S.tapz] || .3;
+    if (x < w * z) prev(); else if (x > w * (1 - z)) next(); else setChrome(true);
   } else setChrome(!$('#reader').classList.contains('show'));
 }
 function clearBack(){
   R.back = []; clearTimeout(R.pillT);
   $('#backpill').hidden = true;
 }
+const NOTE_T = /^[\[(]?(\d{1,3}|[*\u2020\u2021\u00a7]{1,3}|[a-z])[\])]?\.?$/i;
+function looksNoteRef(a){
+  if (/noteref|doc-noteref|footnote/i.test((a.getAttribute('epub:type') || '') + ' ' + (a.getAttribute('role') || ''))) return true;
+  const t = (a.textContent || '').replace(/\s+/g, '');
+  return t.length <= 5 && NOTE_T.test(t) && !!(a.closest('sup,sub') || a.querySelector('sup,sub') || /^[\[(]/.test(t));
+}
+async function noteText(href){
+  if (/^(https?:|mailto:|tel:)/i.test(href)) return null;
+  const [pp, frag] = href.split('#'); if (!frag) return null;
+  const cur = R.book.spine[R.i].path, path = pp ? resolvePath(dirOf(cur), pp) : cur;
+  const idx = R.book.spine.findIndex(x => x.path === path); if (idx < 0) return null;
+  let el = null;
+  const live = R.doc && R.doc.querySelector('.a-ch[data-i="' + idx + '"]');
+  if (live) el = R.doc.getElementById(frag);
+  else { try { el = new DOMParser().parseFromString(await R.book.zip.text(path), 'text/html').getElementById(frag); } catch (e) {} }
+  if (!el) return null;
+  let box = el;
+  if (!(el.textContent || '').trim() || el.tagName === 'A' || el.tagName === 'SUP') box = el.closest('aside,li,p,dd,div,section,td') || el;
+  const c = box.cloneNode(true);
+  c.querySelectorAll('a[epub\\:type~="backlink"],a[role="doc-backlink"],script,style').forEach(n => n.remove());
+  c.querySelectorAll('a').forEach(n => { if (/^[\s\u21a9\u2191^\[\]()\d.]*$/.test(n.textContent) || /back|return/i.test(n.textContent)) n.remove(); });
+  let t = (c.textContent || '').replace(/\s+/g, ' ').trim().replace(/^[\[(]?(\d{1,3}|[*\u2020\u2021\u00a7]+)[\])]?[.:]?\s+/, '').replace(/\s*[\u21a9\u2191]+$/, '');
+  return t && t.length <= 1200 ? t : null;
+}
+function closeNote(){ $('#noteCard').hidden = true; }
+function showNote(t, href){ const c = $('#noteCard'); c.querySelector('.nt').textContent = t; c.dataset.href = href; c.hidden = false; }
+$('#noteX').onclick = closeNote;
+$('#noteGo').onclick = () => { const h = $('#noteCard').dataset.href; closeNote(); if (h) followLink(h); };
 function followLink(href){
   if (/^(https?:|mailto:|tel:)/i.test(href)){ window.open(href, '_blank', 'noopener'); return; }
   const [pp, frag] = href.split('#');
@@ -1341,7 +1399,13 @@ function bindDoc(d){
     if (sel) return;
     const el = e.target.closest ? e.target : e.target.parentElement;
     const a = el.closest('a[href]');
-    if (a){ e.preventDefault(); followLink(a.getAttribute('href')); return; }
+    closeNote();
+    if (a){
+      e.preventDefault(); const hr = a.getAttribute('href');
+      if (looksNoteRef(a)) noteText(hr).then(t => { if (t) showNote(t, hr); else followLink(hr); }).catch(() => followLink(hr));
+      else followLink(hr);
+      return;
+    }
     if (HB.mode === 'edit'){ closeHlbar(true); return; }
     const mk = el.closest('mark.a-hl');
     if (mk){ openHlbar('edit', {id: mk.dataset.id}); return; }
@@ -1481,7 +1545,7 @@ function buildStats(body){
 }
 
 /* =============== ambient music =============== */
-const MU = {tracks: [], cur: -1, url: null, unlocked: false};
+const MU = {tracks: [], cur: -1, url: null, unlocked: false, sleepAt: 0, sleepM: 0};
 const mAu = new Audio(); mAu.preload = 'auto';
 const mdb = new Promise((res, rej) => {
   try { const q = indexedDB.open('alcove-music', 1); q.onupgradeneeded = () => { q.result.createObjectStore('tracks', {keyPath: 'id'}); q.result.createObjectStore('blobs'); }; q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); } catch (e) { rej(e); }
@@ -1559,6 +1623,8 @@ async function mDelete(i){
   try { await mDo(['tracks', 'blobs'], 'readwrite', (a, b) => { b.delete(t.id); return a.delete(t.id); }); } catch (e) {}
   await mLoad();
 }
+function mSleep(m){ MU.sleepM = m; MU.sleepAt = m ? Date.now() + m * 60000 : 0; musicRefresh(); if (m) toast('music will stop in ' + m + ' minutes'); }
+mAu.addEventListener('timeupdate', () => { if (MU.sleepAt && Date.now() >= MU.sleepAt){ MU.sleepAt = 0; MU.sleepM = 0; mAu.pause(); musicRefresh(); } });
 function musicRefresh(){
   const playing = !!MU.url && !mAu.paused;
   const mb = $('#musBtn'); if (mb) mb.classList.toggle('on', playing);
@@ -1567,6 +1633,7 @@ function musicRefresh(){
   const cur = MU.tracks[MU.cur];
   $('#mNow').textContent = MU.tracks.length ? (cur && MU.url ? (playing ? 'playing: ' : 'paused: ') + cur.name : 'nothing playing') : 'no songs yet. add some ambient tracks.';
   $('[data-m=play]').innerHTML = playing ? mIc.pause : mIc.play;
+  document.querySelectorAll('#mSleep button').forEach(b => b.classList.toggle('on', Number(b.dataset.sl) === (MU.sleepAt ? MU.sleepM : 0)));
   $('[data-m=shuf]').classList.toggle('on', !!S.mShuf);
   const rp = $('[data-m=rep]'); rp.classList.toggle('on', S.mRep !== 'off'); rp.innerHTML = mIc.rep + (S.mRep === 'one' ? '<span class="one">1</span>' : '');
   const list = $('#mList'); list.replaceChildren();
@@ -1580,12 +1647,14 @@ function musicRefresh(){
 function buildMusic(body){
   body.innerHTML = `<div class="music"><div class="mnow" id="mNow"></div>
     <div class="mctl"><button data-m="shuf" aria-label="shuffle">${mIc.shuf}</button><button data-m="prev" aria-label="previous">${mIc.prev}</button><button data-m="play" class="big" aria-label="play or pause"></button><button data-m="next" aria-label="next">${mIc.next}</button><button data-m="rep" aria-label="repeat"></button></div>
+    <div class="row"><span>sleep timer</span><div class="seg" id="mSleep"><button data-sl="0">off</button><button data-sl="15">15m</button><button data-sl="30">30m</button><button data-sl="60">60m</button></div></div>
     <div id="mList"></div>
     <button class="toc" data-m="add">add songs<div class="sub">mp3 or other audio files, kept privately on this device</div></button>
     <p class="mnote">use your phone's volume buttons. songs keep playing while you read, but aren't included in backups.</p></div>`;
   body.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     mUnlock();
+    if (b.dataset.sl !== undefined){ mSleep(Number(b.dataset.sl)); return; }
     if (b.dataset.play !== undefined){ mPlay(Number(b.dataset.play)); return; }
     if (b.dataset.del !== undefined){ mDelete(Number(b.dataset.del)); return; }
     const m = b.dataset.m;
@@ -1741,7 +1810,7 @@ function applyHl(sec, h){
     const so = node === a.n ? a.o : 0, eo = node === b.n ? b.o : node.data.length;
     if (eo <= so) return;
     const r = d.createRange(); r.setStart(node, so); r.setEnd(node, eo);
-    const m = d.createElement('mark'); m.className = 'a-hl c' + h.c; m.dataset.id = h.id;
+    const m = d.createElement('mark'); m.className = 'a-hl c' + h.c; m.dataset.id = h.id; if (h.note) m.dataset.note = '1';
     try { r.surroundContents(m); } catch (e) {}
   });
 }
@@ -1794,6 +1863,16 @@ function hbText(){
   if (HB.mode === 'new' && HB.range) t = HB.range.toString();
   else if (HB.mode === 'edit'){ const h = (R.meta.hl || []).find(x => x.id === HB.id); t = h ? h.text : ''; }
   return t;
+}
+function hbNote(){
+  const h = (R.meta.hl || []).find(x => x.id === HB.id); if (!h) return;
+  const n = prompt('Note for this highlight (clear it to remove)', h.note || '');
+  if (n === null) return;
+  const t = n.trim().slice(0, 600);
+  if (t) h.note = t; else delete h.note;
+  saveMarks();
+  R.doc && R.doc.querySelectorAll('mark.a-hl[data-id="' + h.id + '"]').forEach(m => { if (t) m.dataset.note = '1'; else delete m.dataset.note; });
+  closeHlbar(true); toast(t ? 'note saved' : 'note removed');
 }
 function hbShare(){
   const t = hbText().trim().replace(/\s+/g, ' '); if (!t) return;
@@ -1899,13 +1978,16 @@ function buildContents(body){
   else if (sheetTab === 'details') buildDetails(list);
   else buildHighlights(list, body);
 }
-function markRow(main, sub, color, onGo, onDel){
+function markRow(main, sub, color, onGo, note, onDel){
+  if (typeof note === 'function'){ onDel = note; note = ''; }
   const row = document.createElement('div'); row.className = 'mk';
   if (color) row.style.borderLeft = '3px solid ' + color;
   const tx = document.createElement('button'); tx.className = 'tx';
   const m = document.createElement('div'); m.textContent = main || '(no text)';
   const s = document.createElement('div'); s.className = 'sub'; s.textContent = sub || '';
-  tx.append(m, s); tx.onclick = onGo;
+  tx.append(m, s);
+  if (note){ const n = document.createElement('div'); n.className = 'sub'; n.style.cssText = 'margin-top:4px;font-style:italic'; n.textContent = 'note: ' + note; tx.append(n); }
+  tx.onclick = onGo;
   const x = document.createElement('button'); x.className = 'x'; x.textContent = '×'; x.setAttribute('aria-label', 'delete'); x.onclick = onDel;
   row.append(tx, x); return row;
 }
@@ -1922,6 +2004,7 @@ function buildHighlights(list, body){
   const cols = HLS.map(c => c.hex);
   hls.forEach(h => list.append(markRow(h.text, labelFor(h.i), cols[h.c] || cols[0],
     () => { closeSheet(); setChrome(false); clearBack(); gotoChapter(h.i, {hl: h.id, off: h.s, frac: 0}); },
+    h.note,
     () => { R.meta.hl = R.meta.hl.filter(x => x !== h); removeHlDom(h.id); saveMarks(); buildContents(body); })));
 }
 
@@ -2215,7 +2298,7 @@ async function exportText(){
     if (b.finishedAt) bits.push('finished ' + day(b.finishedAt));
     if (bits.length) md += bits.join(' · ') + '\n';
     md += '\n';
-    for (const h of b.hl.slice().sort((x, y) => (x.i - y.i) || (x.s - y.s))) md += `> ${String(h.text || '').replace(/\n+/g, ' ')}\n> — ${(HLS[h.c] || HLS[0]).name}${h.t ? ', ' + day(h.t) : ''}\n\n`;
+    for (const h of b.hl.slice().sort((x, y) => (x.i - y.i) || (x.s - y.s))) md += `> ${String(h.text || '').replace(/\n+/g, ' ')}\n> — ${(HLS[h.c] || HLS[0]).name}${h.t ? ', ' + day(h.t) : ''}\n\n${h.note ? '**note:** ' + String(h.note).replace(/\n+/g, ' ') + '\n\n' : ''}`;
     if (b.bm.length){ md += '**bookmarks**\n\n'; for (const m of b.bm) md += `- ${m.label || ''}${m.snippet ? ': ' + m.snippet : ''}\n`; md += '\n'; }
   }
   return new File([md], stampName({pre: 'highlights-', suf: '.md'}), {type: 'text/markdown'});
@@ -2297,9 +2380,11 @@ async function applyImport(pkg, mode){
 let BK = {};
 const ago = t => { const d = Math.floor((Date.now() - t) / 864e5); return d < 1 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago'; };
 function lastBackupAt(){ try { return Number(localStorage.getItem('alcove.lastBackup')) || 0; } catch (e) { return 0; } }
+const bkOverdue = () => lib.length > 0 && (!lastBackupAt() || Date.now() - lastBackupAt() > 30 * 864e5);
 function renderBkNote(){
   const t = lastBackupAt(), el = $('#bkNote');
   el.textContent = !lib.length ? '' : t ? 'last backup ' + ago(t) : 'no backup yet';
+  el.style.color = bkOverdue() ? 'var(--accent)' : '';
 }
 function buildBackup(body){
   body.replaceChildren();
@@ -2512,6 +2597,7 @@ function buildSettings(body){
   <div class="row"><span>alignment</span><div class="seg" data-key="just"><button data-val="justify">justified</button><button data-val="left">left</button></div></div>
   <div class="row"><span>hyphenation</span><div class="seg" data-key="hyph"><button data-val="on">on</button><button data-val="off">off</button></div></div>
   <div class="row"><span>paragraphs</span><div class="seg" data-key="para"><button data-val="book">as book</button><button data-val="indent">indent</button><button data-val="block">spaced</button></div></div>
+  <div class="row"><span>tap zones</span><div class="seg" data-key="tapz"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
   <div class="row"><span>dim</span><input type="range" data-rng="dim" min="0" max="60" value="${Number(S.dim) || 0}" aria-label="dim screen"></div>
   <div class="row"><span>warmth</span><input type="range" data-rng="warm" min="0" max="100" value="${Number(S.warm) || 0}" aria-label="warm tint"></div>
   <div class="row"><span>pdf pages</span><div class="seg" data-key="pdf"><button data-val="auto">auto</button><button data-val="original">original</button><button data-val="inverted">dark</button></div></div>
@@ -2547,6 +2633,7 @@ $('#hlbar').addEventListener('click', e => {
   if (b.dataset.c !== undefined) hbColor(Number(b.dataset.c));
   else if (b.id === 'hlCopy') hbCopy();
   else if (b.id === 'hlLook') hbLook();
+  else if (b.id === 'hlNote') hbNote();
   else if (b.id === 'hlShare') hbShare();
   else if (b.id === 'hlDel') hbDelete();
   else if (b.id === 'hlX') closeHlbar(true);
@@ -2701,6 +2788,15 @@ applyTheme();
   if (last) sp.remove();
   else { sp.hidden = false; setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 450); }, 800); }
 }
+setTimeout(() => {
+  try {
+    if (!bkOverdue() || !$('#reader').hidden) return;
+    const last = Number(localStorage.getItem('alcove.bkNudge')) || 0;
+    if (Date.now() - last < 7 * 864e5) return;
+    localStorage.setItem('alcove.bkNudge', String(Date.now()));
+    toast('time for a backup. menu \u2192 backup & restore', true); setTimeout(() => $('#toast').classList.remove('on'), 6000);
+  } catch (e) {}
+}, 4500);
 loadLib().then(() => {
   let last = null;
   try { last = localStorage.getItem('alcove.last'); } catch (e) {}
