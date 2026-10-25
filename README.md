@@ -1,168 +1,137 @@
-# my saga.
+# alcove.
 
-**A private diary that lives only on your device.**
+A small, private EPUB and PDF reader that runs entirely in your browser. No app store, no account, no server. Host it for free on GitHub Pages, add it to your home screen, and it behaves like a native reading app.
 
-my saga. is a free, open-source journal app. There is no account, no server, no tracking, and no analytics. Your entries are saved inside your own browser or app on your own device and never get sent anywhere. Nothing to sell, because nothing is collected.
-
-It runs on iPhone, Android, Windows, Mac, and Linux, works fully offline, and installs like a normal app.
-
-**Open it here:** https://meganvalo.github.io/my-saga-diary-app/
-
----
+It's built mainly for iPhone and iPad (Safari), but works in any modern browser.
 
 ## Features
 
-- Rich-text writing: bold, italic, underline, strikethrough, headings, quotes, lists, links, and dividers
-- A finished phone layout: solid colored app bar, tap-to-search, bordered entry rows with a date column, month headers, and a bottom tab bar (Entries, Calendar, Stats, Settings)
-- Photo preview next to each entry in the list (the first picture)
-- Pin favorite entries to the top
-- Press and hold (or right-click) an entry to edit it, move it to a folder, change its date, pin it, or delete it
-- Select several entries to move, tag, or delete them in bulk
-- Delete an entry, or change its date
-- Color themes (Vanilla Cream, Blush Petal, Rosewood, Sage Leaf, Misty Sky, Midnight Lagoon), each with a light and a dark version
-- Font choice in Settings. Arial is the default; Aliquam, Print Clearly and Lora are built into the app, plus Verdana, Trebuchet MS, Georgia, Times New Roman, Palatino and Courier New (these use the copy already on the device, so they may look slightly different from one device to another)
-- Folders and tags, with a multi-select mode to add many entries to a folder at once
-- Your folder or tag filter is remembered when you come back to the app
-- Search across the full text of every entry
-- Calendar view to jump to any day
-- Writing stats
-- Light and dark themes
-- Optional passcode lock (4 or 6 digits) with auto-lock
-- Works offline after the first load
-- One-tap backup of all entries, photos and folders to a JSON file
-- Import txt, md, csv, pdf, Day One and my saga. backups; folders in a backup or CSV are recreated automatically
-- No ads, no cloud, no sign-up
+**Library**
+- Import EPUB and PDF files from your device (multiple at once)
+- Cover grid with reading progress, search, rename (title and author) and delete
+- Reading dates for every book: when you started it, when you last read it, and when you finished it (set automatically, and editable from the book's details)
+- Opens the last book you were reading, right where you left off
 
----
+**Reading EPUBs**
+- Two layouts: **pages** (tap or swipe to turn) and **continuous scroll** across chapters
+- Jumps to Chapter 1 or the Introduction the first time you open a book (falls back to the title page)
+- Table of contents, a progress slider, and a "back to where you were" button after following footnotes or links
+- Bookmarks and highlights (four colors) with a list of each per book
+- Tap an image to view it full screen, with pinch and double-tap zoom
+- Settings: text size, serif or sans, theme (black, graphite, light, auto), margins, line spacing
 
-## Install on iPhone / iPad (iOS)
+**Reading PDFs**
+- Continuous scroll with pinch and double-tap zoom
+- Table of contents (from the PDF's outline), page slider, bookmarks
+- Optional dark rendering for dark themes
 
-1. Open the app link above in **Safari**.
-2. Tap the **Share** button (the square with an arrow).
-3. Scroll down and tap **Add to Home Screen**, then tap **Add**.
-4. Open my saga. from your Home Screen. Open it once while online so it can save itself for offline use.
+**Other**
+- Works offline once loaded
+- Position is saved precisely (by text location, not just percentage), so it survives changing text size or layout
+- Everything stays on your device
 
-> **Important:** the Home Screen app and Safari keep **separate** storage. Install it to your Home Screen *before* you start writing, and always open it from the icon afterward. Entries written in a Safari tab will not appear in the Home Screen app.
+## Supported devices and browsers
 
-## Install on Android
-
-1. Open the app link in **Chrome** (Samsung Internet and Edge work too).
-2. Tap the **⋮** menu, then **Install app** (or **Add to Home screen**).
-3. Confirm. my saga. now appears in your app drawer and opens full-screen.
-
-## Install on Windows, Mac, or Linux
-
-**Easiest:** open the link in Chrome or Edge, click the **Install** icon at the right end of the address bar (or menu, then **Install my saga.**). It gets its own window and a Start menu / Dock entry.
-
-On a Mac, Safari 17+ can do this too: **File, then Add to Dock**.
-
-**Windows .exe (optional):** this repo includes a desktop wrapper. See [Build the desktop app](#build-the-windows-desktop-app) below.
-
----
-
-## Your privacy, in plain English
-
-- **Your entries never leave your device.** They are stored in your browser's built-in database (IndexedDB). The app contains no code that uploads them anywhere.
-- **No accounts, cookies, analytics, or tracking.**
-- **Hosting note:** if you use the GitHub Pages link, GitHub serves the app files to you, so, like any website, GitHub may see ordinary request data such as your IP address when the app loads. Your diary content is never part of that. For zero outside contact, host your own copy or use the desktop app.
-- **Offline:** after the first visit, the app is saved on your device and works without a connection.
-
-### About the passcode
-
-The passcode is **optional** and you set it yourself (Settings, then Security). You can turn it on, change it, or turn it off at any time. It is stored only as a salted, hashed value (PBKDF2), never as the digits you typed, and the app re-locks after a minute away.
-
-Please know what it is and isn't:
-
-- It is a **lock screen** that keeps people out of the app on your device.
-- It is **not encryption.** Entries are stored unscrambled in your browser's storage, so it will not stop someone with technical access to your device or browser profile.
-- **It cannot be recovered.** If you forget it, "Forgot?" erases all entries on that device and starts fresh. Export backups regularly.
-
----
-
-## Your data and backups
-
-- Entries live in the browser or app where you wrote them. **Each device, browser, and installed copy has its own separate diary.** There is no syncing.
-- **Back up:** Settings, then **Create a backup**, and keep the file somewhere safe. It includes your folders.
-- **Restore:** Settings, then **Import entries**, and pick the backup file. Folders are recreated and entries are filed back into them. Entries already on the device are skipped.
-- Clearing your browser's site data or uninstalling the app will delete your entries. Export first.
-- **Not available yet:** syncing between devices and encrypting entries at rest.
-
----
-
-## Run your own copy (GitHub Pages)
-
-1. **Fork** this repository (or download it and upload the files to a new public repo).
-2. In your repo, go to **Settings, then Pages**.
-3. Under **Build and deployment**, choose **Deploy from a branch**, select `main` and `/ (root)`, and save.
-4. After a minute or two your app is live at `https://YOUR-USERNAME.github.io/REPO-NAME/`.
-
-There is no build step. The app is plain HTML, CSS, and JavaScript.
-
-### Updating
-
-After you change `index.html`, edit the cache name at the top of `sw.js` (for example `my-saga-v4` to `my-saga-v5`) so installed copies pick up the new version. Users may need to open the app twice for an update to appear.
-
-### Run locally
-
-```bash
-python3 -m http.server 8000
-# then open http://localhost:8000
-```
-
-(Opening `index.html` by double-clicking works for the app itself, but the offline cache and passcode need `http://localhost` or `https`.)
-
----
-
-## Build the Windows desktop app
-
-The `desktop/` folder wraps the app with [Electron](https://www.electronjs.org/).
-
-**No setup needed:** in your GitHub repo, open **Actions**, choose **Build Windows exe**, and click **Run workflow**. When it finishes, download the installer and portable `.exe` from the run's **Artifacts**.
-
-**Locally** (requires [Node.js](https://nodejs.org/)):
-
-```bash
-cd desktop
-npm install
-npm run dist
-```
-
-The files appear in `desktop/dist/`. Windows SmartScreen may warn about an unknown publisher because the app isn't code-signed. Choose **More info, then Run anyway**.
-
----
-
-## Project structure
-
-```
-index.html              the entire app (HTML, CSS, JS)
-                        (body text weight: change --fw-text near the end of the <style> block)
-manifest.webmanifest    install info (name, icons, colors)
-sw.js                   service worker for offline use
-icons/                  app and home-screen icons
-desktop/                Electron wrapper for the Windows app
-.github/workflows/      GitHub Action that builds the .exe
-```
-
-**Fonts:** Aliquam by Alvaro Thomaz is freeware (the default; it has no bold, so bold text is browser-simulated). Print Clearly and Print Bold by [Blue Vinyl Fonts](http://www.bvfonts.com) are freeware, free for private use. Their license asks you to contact bvfonts@bvfonts.com before commercial use or redistribution on CDs. Lora is under the SIL Open Font License. To add another font, embed it with an `@font-face` in `index.html`, add a `[data-font="id"]` block next to the existing one, and add one line to the `FONTS` list in the script.
-
-**Built with:** vanilla JavaScript, IndexedDB, a service worker, and the Web Crypto API. No frameworks, no dependencies, no network requests at runtime.
-
----
-
-## Browser support
-
-| Platform | Install from | Notes |
+| Platform | Browser | Status |
 |---|---|---|
-| iOS / iPadOS 16.4+ | Safari | Use "Add to Home Screen" |
-| Android | Chrome, Edge, Samsung Internet | "Install app" |
-| Windows / Linux / ChromeOS | Chrome, Edge | "Install" in the address bar |
-| macOS | Chrome, Edge, Safari 17+ | Safari uses "Add to Dock" |
+| iPhone, iPad (iOS / iPadOS 16.4 or newer) | Safari, and installed to the Home Screen | Primary target |
+| Mac | Safari 16.4+, Chrome, Edge, Firefox | Should work |
+| Android | Chrome, Edge, Samsung Internet, Firefox | Should work |
+| Windows / Linux | Chrome, Edge, Firefox | Should work |
 
-Passcode and offline features require a secure context (`https://` or `localhost`), which GitHub Pages provides.
+Notes:
+- **iOS / iPadOS 16.4+** is needed because the app reads EPUB files with the browser's built-in decompression support, which arrived in that version. Older versions can't open books.
+- Only Safari can install web apps on iPhone and iPad. Other iOS browsers can open the site but can't add it to the Home Screen as a proper app.
+- Testing so far: the author uses it on iPad and iPhone, and the code has been run through automated tests in a phone-sized Chromium browser. Other combinations in the table are expected to work but haven't all been tried. Issues and reports are welcome.
 
----
+## Install (host it yourself)
 
-## Contributing
+You need a free GitHub account.
 
-Issues and pull requests are welcome. Because the app is a single file, small focused changes are easiest to review. Please keep the project's core promise: **nothing leaves the device.** Changes that add tracking, analytics, or network calls with user data won't be accepted.
+1. **Create a repository** (for example `alcove`).
+2. **Upload these three files** to the root of the repo:
+   - `index.html`
+   - `sw.js`
+   - `icon.png`
+3. In the repo go to **Settings → Pages**. Under **Build and deployment**, set **Source** to "Deploy from a branch", choose the `main` branch and the `/ (root)` folder, then save.
+4. After a minute or two your site is live at `https://YOUR-USERNAME.github.io/REPO-NAME/`.
 
+### Add it to your phone or tablet
+
+- **iPhone / iPad:** open the site in **Safari**, tap the **Share** button, choose **Add to Home Screen**, then open alcove. from the new icon.
+- **Android:** open the site in Chrome, open the menu, and choose **Install app** or **Add to Home screen**.
+- **Desktop:** just open the link in your browser, or use your browser's "Install" option.
+
+> **Add your books after installing.** On iOS, the Home Screen app and Safari keep separate storage, so books imported in a Safari tab won't appear in the installed app.
+
+## Using it
+
+### Adding books
+Tap **add**, then pick `.epub` or `.pdf` files from the Files app. Tap **edit** on the library screen to rename or delete a book.
+
+### Page mode
+| Action | What it does |
+|---|---|
+| Tap the right 30% of the screen, or swipe left | Next page |
+| Tap the left 30% of the screen, or swipe right | Previous page |
+| Tap the middle | Show or hide the menu |
+| Press and hold a word, then drag | Select text to highlight |
+| Tap a highlight | Change its color, copy it, or delete it |
+| Tap an image (middle of the screen) | View it full screen |
+| Tap the percentage at the bottom | Show or hide the menu |
+
+### Scroll mode
+Scroll normally. Tap the middle to show the menu. Select text the usual iOS way to highlight it.
+
+### PDFs
+Scroll through pages, pinch or double-tap to zoom, and tap once to show the menu.
+
+### Menu
+Top bar: **library**, bookmark ribbon, **contents** (contents, bookmarks, highlights), **settings**. Bottom bar: slider to jump anywhere in the book.
+
+### Keyboard (iPad keyboard or desktop)
+Right arrow or space: next page. Left arrow: previous page. Escape: close panels or the menu.
+
+## Your data and privacy
+
+- Books, covers, reading positions, dates, bookmarks and highlights are stored in your browser's local storage (IndexedDB) on that device. Nothing is uploaded anywhere.
+- There are no accounts, no analytics and no tracking.
+- The only network request the app makes beyond loading its own files is for **PDF support**: the first time you add or open a PDF it downloads [PDF.js](https://mozilla.github.io/pdf.js/) from the cdnjs CDN. It's cached afterwards, so PDFs then work offline.
+- **Nothing syncs between devices.** If you clear website data, delete the Home Screen app, or iOS clears storage for an unused site, your library goes with it. Keep your original book files.
+
+## Limitations
+
+- No DRM support. Copy-protected EPUBs (for example from Kindle or Kobo stores) won't open.
+- Highlights work in EPUBs only, not PDFs.
+- No search inside a book yet.
+- EPUBs are shown with alcove.'s own typography. The publisher's styling is intentionally stripped (this keeps themes consistent), so some books lose special formatting. Fixed-layout EPUBs (such as some comics and picture books) aren't specially handled.
+- Scripts and interactive content inside EPUBs are removed for safety.
+- Light mode uses a black strip behind the iOS status bar, because iOS fixes the clock and battery text to white for web apps like this.
+
+## Troubleshooting
+
+- **I updated the files but nothing changed.** Fully close the app and reopen it. If it still looks old, remove it from the Home Screen and add it again. Your books are stored separately and should stay.
+- **A book won't open.** It may be DRM-protected or damaged. Try opening it in another reader to check.
+- **PDFs won't add or open.** You need an internet connection the first time, so the PDF library can download.
+- **Books disappeared.** The browser's storage was cleared. Re-add them from your files.
+- **A cover is missing.** Covers are rebuilt automatically from the book file the next time you open the library.
+
+## How it's built
+
+A single `index.html` of plain HTML, CSS and JavaScript, with no build step and no dependencies to install.
+
+- Reads EPUB files with a small built-in ZIP reader (uses the browser's `DecompressionStream`)
+- Stores everything in IndexedDB
+- `sw.js` is a small service worker that makes the app load offline
+- PDF rendering uses PDF.js, loaded on demand
+
+To customize it, edit `index.html` directly. Colors live in the `body[data-theme=...]` rules at the top of the stylesheet.
+
+## Credits
+
+- Title font: **Chrysanthi Unicode**, a freeware font from [FontSpace](https://www.fontspace.com/chrysanthi-unicode-font-f13315). It's embedded in the file, trimmed to Latin characters to keep the app small. Check its license on FontSpace if you plan to redistribute your own copy.
+- PDF support: [PDF.js](https://github.com/mozilla/pdf.js) by Mozilla, Apache License 2.0, loaded from cdnjs at runtime.
+
+## License
+
+Add the license of your choice here (MIT is a common option for projects like this).
