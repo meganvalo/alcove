@@ -368,7 +368,7 @@ const THEMES = {
   document.head.append(st);
 }
 const THEME_MIGRATE = {espresso: 'cocoa', light: 'batter'};
-let S = {size:19, font:'serif', theme:'cotton', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:'', tapz:'normal', ttsRate:1, ttsVoice:''};
+let S = {size:19, font:'serif', theme:'cotton', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:'', tapz:'normal', ttsRate:1, ttsVoice:'', spread:'auto', foot:'page', ttsBg:'on'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('alcove.settings') || '{}')); } catch (e) {}
 if (THEME_MIGRATE[S.theme]) S.theme = THEME_MIGRATE[S.theme];
 function saveSettings(){ try { localStorage.setItem('alcove.settings', JSON.stringify(S)); } catch (e) {} }
@@ -1083,7 +1083,7 @@ document.addEventListener('keydown', userMoved, true);
 document.addEventListener('pointerdown', userMoved, true);
 
 function docCss(){
-  const {w, h, px, py} = R.geo, t = THEMES[theme()];
+  const {w, h, px, py, spread} = R.geo, t = THEMES[theme()];
   const sans = '-apple-system,system-ui,"Helvetica Neue",sans-serif';
   const ff = S.font === 'serif' ? 'ui-serif,"Iowan Old Style","New York",Georgia,serif' : sans;
   const paged = S.layout === 'pages';
@@ -1119,7 +1119,8 @@ function docCss(){
     c += `
   html,body{overflow:hidden;height:100%;touch-action:none}
   body{position:relative}
-  #a-wrap{position:absolute;left:${px}px;top:${py}px;width:${cw}px;height:${h - 2 * py}px;column-width:${cw}px;-webkit-column-width:${cw}px;column-gap:${2 * px}px;-webkit-column-gap:${2 * px}px;column-fill:auto;will-change:transform}
+  ${spread ? `body::before{content:'';position:fixed;left:50%;top:${py}px;bottom:${py}px;width:1px;background:${t.dim}40}` : ''}
+  #a-wrap{position:absolute;left:${px}px;top:${py}px;width:${cw}px;height:${h - 2 * py}px;${spread ? `column-count:2;-webkit-column-count:2;` : `column-width:${cw}px;-webkit-column-width:${cw}px;`}column-gap:${2 * px}px;-webkit-column-gap:${2 * px}px;column-fill:auto;will-change:transform}
   #a-wrap img,#a-wrap svg{max-height:${h - 2 * py - 6}px!important;width:auto!important}
   #a-wrap > .a-ch > *:first-child{margin-top:0}`;
   } else {
@@ -1137,9 +1138,11 @@ function applyLayout(initial){
   const w = frame.clientWidth, h = frame.clientHeight;
   if (!w || !h) return;
   if (!initial && R.docLayout !== S.layout){ loadChapter(R.i, {frac: R.frac}); return; }
-  const keep = initial ? R.target : {frac: R.frac};
+  const an0 = (!initial && S.layout === 'pages' && R.geo) ? currentAnchor() : null;
+  const keep = initial ? R.target : (an0 && an0.i === R.i ? {off: an0.off} : {frac: R.frac});
   const mf = {narrow: .55, normal: 1, wide: 1.7}[S.margin] || 1;
   R.geo = {w, h, px: Math.round(Math.max(12, Math.min(w * 0.2, Math.max(22, Math.min(44, w * 0.075)) * mf))), py: Math.round(Math.max(18, h * 0.035))};
+  R.geo.spread = S.layout === 'pages' && S.spread !== 'single' && w >= 640;
   $('#reader').dataset.layout = S.layout;
   R.wrap.style.transform = ''; R.wrap.style.transition = '';
   d.getElementById('a-css').textContent = docCss();
@@ -1268,14 +1271,25 @@ function overall(){
   return Math.max(0, Math.min(1, (s.start + s.w * R.frac) / R.book.total));
 }
 let saveTimer, mkTimer;
+function pageInfo(){
+  if (R.kind === 'pdf' || S.layout !== 'pages' || !R.book || !R.pages || !R.geo) return null;
+  const bk = R.book, sp = R.geo.spread ? 2 : 1, ch = bk.spine[R.i];
+  const sig = [S.size, S.font, S.margin, S.spacing, S.para, S.hyph, S.just, R.geo.w, R.geo.h, sp].join('|');
+  if (bk.bppSig !== sig){ bk.bppSig = sig; bk.bpp = new Map(); }
+  if (R.pages >= 3 || bk.bpp.size === 0) bk.bpp.set(R.i, {b: ch.w, p: R.pages * sp});
+  let B = 0, Pg = 0; bk.bpp.forEach(v => { B += v.b; Pg += v.p; });
+  const bpp = Math.max(1, B / Math.max(1, Pg)), total = Math.max(1, Math.round(bk.total / bpp));
+  const cur = Math.min(total, Math.floor((ch.start + ch.w * ((R.page || 0) / R.pages)) / bpp) + 1);
+  return {cur, total, text: (sp === 2 && cur < total ? cur + '\u2013' + (cur + 1) : cur) + ' of ~' + total};
+}
 function progress(){
   actAt = Date.now();
   if (typeof TT !== 'undefined' && TT.on && !TT.paused && R.kind !== 'pdf' && Date.now() - TT.selfAt > 1500) ttsFromView();
   let p, label;
   if (R.kind === 'pdf'){ p = P.n ? ((P.cur - 1) + P.frac) / P.n : 0; label = 'page ' + P.cur + ' of ' + P.n; }
   else { p = overall(); label = chapterLabel(); }
-  const pct = Math.round(p * 100) + '%';
-  $('#pct').textContent = pct; $('#chap').textContent = label;
+  const pct = Math.round(p * 100) + '%', pi = S.foot === 'pct' ? null : pageInfo();
+  $('#pct').textContent = pi ? pi.text : pct; $('#chap').textContent = label;
   $('#slider').value = Math.round(p * 1000);
   $('#sl1').textContent = label; $('#sl2').textContent = pct + (R.kind === 'pdf' || !R.book ? '' : ' · ' + timeLeftTxt());
   clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 600);
@@ -1762,6 +1776,33 @@ async function ttsSpeak(fresh){
   if (fresh){ synth.cancel(); await tSleep(90); if (tok !== TT.tok) return; }
   synth.speak(u);
 }
+let kaAu = null;
+function msMusic(){
+  try {
+    const ms = navigator.mediaSession;
+    ms.setActionHandler('play', () => mAu.play().catch(() => {})); ms.setActionHandler('pause', () => mAu.pause());
+    ms.setActionHandler('nexttrack', () => mNext(false)); ms.setActionHandler('previoustrack', mPrev);
+  } catch (e) {}
+}
+function kaStart(){
+  if (S.ttsBg === 'off') return;
+  try {
+    if (!kaAu){
+      const n = 8000, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, i % 2 ? 1 : -1, true);
+      kaAu = new Audio(URL.createObjectURL(new Blob([buf], {type: 'audio/wav'}))); kaAu.loop = true;
+    }
+    kaAu.play().catch(() => {});
+    const ms = navigator.mediaSession, m = R.meta || {};
+    ms.metadata = new MediaMetadata({title: m.title || 'alcove.', artist: m.author || 'reading aloud'});
+    ms.playbackState = 'playing';
+    ms.setActionHandler('play', () => { if (TT.paused) ttsToggle(); }); ms.setActionHandler('pause', () => { if (!TT.paused) ttsPause(); });
+    ms.setActionHandler('nexttrack', () => ttsStep(1)); ms.setActionHandler('previoustrack', () => ttsStep(-1));
+  } catch (e) {}
+}
+function kaStop(){ try { kaAu && kaAu.pause(); } catch (e) {} msMusic(); }
 function ttsUnlock(){
   if (TT.unlocked || !synth) return; TT.unlocked = true;
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch (e) {}
@@ -1771,12 +1812,12 @@ async function ttsStart(){
   ttsUnlock();
   let ci, off = null;
   if (R.kind === 'pdf') ci = P.cur; else { const an = currentAnchor(); ci = an ? an.i : R.i; off = an ? an.off : null; }
-  TT.on = true; TT.paused = false; TT.sleepAt = TT.sleepAt || 0;
+  TT.on = true; TT.paused = false; TT.sleepAt = TT.sleepAt || 0; kaStart();
   await ttsLoad(ci, off, R.frac); ttsRefresh(); ttsSpeak(true);
 }
-function ttsPause(){ TT.paused = true; TT.tok++; try { synth.cancel(); } catch (e) {} ttsRefresh(); }
-function ttsStop(){ TT.on = false; TT.paused = true; TT.tok++; TT.sleepAt = 0; TT.sleepEnd = false; try { synth && synth.cancel(); } catch (e) {} ttsClear(); ttsRefresh(); }
-function ttsToggle(){ if (!TT.on) ttsStart(); else if (TT.paused){ TT.paused = false; ttsSpeak(true); ttsRefresh(); } else ttsPause(); }
+function ttsPause(){ kaStop(); TT.paused = true; TT.tok++; try { synth.cancel(); } catch (e) {} ttsRefresh(); }
+function ttsStop(){ kaStop(); TT.on = false; TT.paused = true; TT.tok++; TT.sleepAt = 0; TT.sleepEnd = false; try { synth && synth.cancel(); } catch (e) {} ttsClear(); ttsRefresh(); }
+function ttsToggle(){ if (!TT.on) ttsStart(); else if (TT.paused){ TT.paused = false; kaStart(); ttsSpeak(true); ttsRefresh(); } else ttsPause(); }
 function ttsStep(d){
   if (!TT.on){ ttsStart(); return; }
   TT.si = Math.max(0, Math.min(TT.sents.length, TT.si + d)); TT.paused = false; ttsSpeak(true);
@@ -1796,6 +1837,7 @@ function ttsRefresh(){
   const sl = TT.sleepAt ? Math.max(1, Math.round((TT.sleepAt - Date.now()) / 60000)) : 0;
   $('#tNow').textContent = (TT.on ? (TT.paused ? 'paused' : 'reading aloud') : 'ready') + (TT.sleepEnd ? ' \u00b7 stops at chapter end' : sl ? ' \u00b7 stops in ~' + sl + ' min' : '');
   $('[data-t=play]').innerHTML = TT.on && !TT.paused ? mIc.pause : mIc.play;
+  document.querySelectorAll('#tBg button').forEach(x => x.classList.toggle('on', x.dataset.bg === (S.ttsBg === 'off' ? 'off' : 'on')));
   document.querySelectorAll('#tRate button').forEach(x => x.classList.toggle('on', Number(x.dataset.rate) === (Number(S.ttsRate) || 1)));
   document.querySelectorAll('#tSleep button').forEach(x => x.classList.toggle('on', x.dataset.sl === (TT.sleepEnd ? 'end' : TT.sleepAt ? String(TT.sleepMin) : '0')));
 }
@@ -1805,6 +1847,7 @@ function buildListen(body){
     <div class="row"><span>speed</span><div class="seg" id="tRate">${[.8, 1, 1.25, 1.5, 2].map(r => `<button data-rate="${r}">${r}\u00d7</button>`).join('')}</div></div>
     <div class="row"><span>voice</span><select id="tVoice" aria-label="voice"></select></div>
     <div class="row"><span>sleep timer</span><div class="seg" id="tSleep"><button data-sl="0">off</button><button data-sl="15">15m</button><button data-sl="30">30m</button><button data-sl="end">chapter</button></div></div>
+    <div class="row"><span>keep going in other apps</span><div class="seg" id="tBg"><button data-bg="on">on</button><button data-bg="off">off</button></div></div>
     <p class="mnote">reads from the top of your page and turns pages for you. turn a page yourself and it carries on from there. it uses your phone's voices (better ones: settings \u2192 accessibility \u2192 spoken content \u2192 voices), and works while the screen is on.</p></div>`;
   const sel = body.querySelector('#tVoice');
   const fill = () => { const vs = ttsVoices(), cur = ttsVoice(); sel.replaceChildren(); vs.forEach(v => sel.append(new Option(v.name + (v.lang ? ' (' + v.lang + ')' : ''), v.voiceURI))); if (cur) sel.value = cur.voiceURI; if (!vs.length) sel.append(new Option('default voice', '')); };
@@ -1813,6 +1856,7 @@ function buildListen(body){
   body.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.t === 'play') ttsToggle(); else if (b.dataset.t === 'prev') ttsStep(-1); else if (b.dataset.t === 'next') ttsStep(1);
+    else if (b.dataset.bg){ S.ttsBg = b.dataset.bg; saveSettings(); if (S.ttsBg === 'off') kaStop(); else if (TT.on && !TT.paused) kaStart(); }
     else if (b.dataset.rate){ S.ttsRate = Number(b.dataset.rate); saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); }
     else if (b.dataset.sl !== undefined){
       const v = b.dataset.sl; TT.sleepEnd = v === 'end'; TT.sleepMin = Number(v) || 0; TT.sleepAt = TT.sleepMin ? Date.now() + TT.sleepMin * 60000 : 0;
@@ -2744,6 +2788,8 @@ function buildSettings(body){
   <div class="row"><span>alignment</span><div class="seg" data-key="just"><button data-val="justify">justified</button><button data-val="left">left</button></div></div>
   <div class="row"><span>hyphenation</span><div class="seg" data-key="hyph"><button data-val="on">on</button><button data-val="off">off</button></div></div>
   <div class="row"><span>paragraphs</span><div class="seg" data-key="para"><button data-val="book">as book</button><button data-val="indent">indent</button><button data-val="block">spaced</button></div></div>
+  <div class="row"><span>two-page spread</span><div class="seg" data-key="spread"><button data-val="auto">auto</button><button data-val="single">single</button></div></div>
+  <div class="row"><span>footer shows</span><div class="seg" data-key="foot"><button data-val="page">page</button><button data-val="pct">percent</button></div></div>
   <div class="row"><span>tap zones</span><div class="seg" data-key="tapz"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
   <div class="row"><span>dim</span><input type="range" data-rng="dim" min="0" max="60" value="${Number(S.dim) || 0}" aria-label="dim screen"></div>
   <div class="row"><span>warmth</span><input type="range" data-rng="warm" min="0" max="100" value="${Number(S.warm) || 0}" aria-label="warm tint"></div>
@@ -2926,7 +2972,7 @@ addEventListener('popstate', () => {
   closeBook(true);
 });
 addEventListener('pagehide', () => { flushSave(); saveSettings(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden){ flushSave(); saveSettings(); if (TT.on && !TT.paused) ttsPause(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden){ flushSave(); saveSettings(); if (TT.on && !TT.paused && S.ttsBg === 'off') ttsPause(); } else if (TT.on && !TT.paused && synth && !synth.speaking) ttsSpeak(true); });
 
 applyTheme();
 {
