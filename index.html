@@ -1141,8 +1141,10 @@ function applyLayout(initial){
   const an0 = (!initial && S.layout === 'pages' && R.geo) ? currentAnchor() : null;
   const keep = initial ? R.target : (an0 && an0.i === R.i ? {off: an0.off} : {frac: R.frac});
   const mf = {narrow: .55, normal: 1, wide: 1.7}[S.margin] || 1;
-  R.geo = {w, h, px: Math.round(Math.max(12, Math.min(w * 0.2, Math.max(22, Math.min(44, w * 0.075)) * mf))), py: Math.round(Math.max(18, h * 0.035))};
-  R.geo.spread = S.layout === 'pages' && S.spread !== 'single' && w >= 640;
+  const sp2 = S.layout === 'pages' && S.spread !== 'single' && w >= 640;
+  const base = sp2 ? Math.max(32, Math.min(80, w * 0.075)) : Math.max(22, Math.min(44, w * 0.075));
+  R.geo = {w, h, px: Math.round(Math.max(12, Math.min(w * 0.2, base * mf))), py: Math.round(Math.max(18, h * (sp2 ? 0.06 : 0.035)))};
+  R.geo.spread = sp2;
   $('#reader').dataset.layout = S.layout;
   R.wrap.style.transform = ''; R.wrap.style.transition = '';
   d.getElementById('a-css').textContent = docCss();
@@ -1272,14 +1274,19 @@ function overall(){
 }
 let saveTimer, mkTimer;
 function pageInfo(){
-  if (R.kind === 'pdf' || S.layout !== 'pages' || !R.book || !R.pages || !R.geo) return null;
-  const bk = R.book, sp = R.geo.spread ? 2 : 1, ch = bk.spine[R.i];
-  const sig = [S.size, S.font, S.margin, S.spacing, S.para, S.hyph, S.just, R.geo.w, R.geo.h, sp].join('|');
+  if (R.kind === 'pdf' || !R.book || !R.geo || !R.doc) return null;
+  const bk = R.book, ch = bk.spine[R.i]; let pages, page, sp = 1;
+  if (S.layout === 'pages'){ if (!R.pages) return null; pages = R.pages; page = R.page || 0; sp = R.geo.spread ? 2 : 1; }
+  else {
+    const sec = R.doc.querySelector('.a-ch[data-i="' + R.i + '"]'); if (!sec) return null;
+    pages = Math.max(1, Math.round(sec.offsetHeight / R.geo.h)); page = Math.min(pages - 1, Math.floor((R.frac || 0) * pages));
+  }
+  const sig = [S.layout, S.size, S.font, S.margin, S.spacing, S.para, S.hyph, S.just, R.geo.w, R.geo.h, sp].join('|');
   if (bk.bppSig !== sig){ bk.bppSig = sig; bk.bpp = new Map(); }
-  if (R.pages >= 3 || bk.bpp.size === 0) bk.bpp.set(R.i, {b: ch.w, p: R.pages * sp});
+  if (pages >= 3 || bk.bpp.size === 0) bk.bpp.set(R.i, {b: ch.w, p: pages * sp});
   let B = 0, Pg = 0; bk.bpp.forEach(v => { B += v.b; Pg += v.p; });
   const bpp = Math.max(1, B / Math.max(1, Pg)), total = Math.max(1, Math.round(bk.total / bpp));
-  const cur = Math.min(total, Math.floor((ch.start + ch.w * ((R.page || 0) / R.pages)) / bpp) + 1);
+  const cur = Math.min(total, Math.floor((ch.start + ch.w * (page / pages)) / bpp) + 1);
   return {cur, total, text: (sp === 2 && cur < total ? cur + '\u2013' + (cur + 1) : cur) + ' of ~' + total};
 }
 function progress(){
@@ -2773,7 +2780,9 @@ function bindSettings(body){
     if (b.dataset.step) S.size = Math.max(13, Math.min(32, S.size + Number(b.dataset.step)));
     else if (b.dataset.val) S[b.closest('[data-key]').dataset.key] = b.dataset.val;
     else return;
+    const lk = b.closest('[data-key]') && b.closest('[data-key]').dataset.key === 'layout', st = body.scrollTop;
     saveSettings(); applyTheme(); sync(); applyLayout();
+    if (lk){ buildSettings(body); body.scrollTop = st; }
   };
   sync();
 }
@@ -2783,12 +2792,12 @@ function buildSettings(body){
   <div class="row"><span>text size</span><div class="step"><button data-step="-1" aria-label="smaller">A−</button><b id="sv"></b><button data-step="1" aria-label="larger">A+</button></div></div>
   <div class="row"><span>typeface</span><div class="seg" data-key="font"><button data-val="serif">serif</button><button data-val="sans">sans</button></div></div>
   <div class="row"><span>layout</span><div class="seg" data-key="layout"><button data-val="pages">pages</button><button data-val="scroll">scroll</button></div></div>
+  ${S.layout === 'pages' ? '<div class="row"><span>two-page spread</span><div class="seg" data-key="spread"><button data-val="auto">auto</button><button data-val="single">single</button></div></div>' : '<div class="row"><span>two-page spread</span><span style="color:var(--dim);font-size:14px">switch layout to pages</span></div>'}
   <div class="row"><span>margins</span><div class="seg" data-key="margin"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
   <div class="row"><span>spacing</span><div class="seg" data-key="spacing"><button data-val="tight">tight</button><button data-val="normal">normal</button><button data-val="loose">loose</button></div></div>
   <div class="row"><span>alignment</span><div class="seg" data-key="just"><button data-val="justify">justified</button><button data-val="left">left</button></div></div>
   <div class="row"><span>hyphenation</span><div class="seg" data-key="hyph"><button data-val="on">on</button><button data-val="off">off</button></div></div>
   <div class="row"><span>paragraphs</span><div class="seg" data-key="para"><button data-val="book">as book</button><button data-val="indent">indent</button><button data-val="block">spaced</button></div></div>
-  <div class="row"><span>two-page spread</span><div class="seg" data-key="spread"><button data-val="auto">auto</button><button data-val="single">single</button></div></div>
   <div class="row"><span>footer shows</span><div class="seg" data-key="foot"><button data-val="page">page</button><button data-val="pct">percent</button></div></div>
   <div class="row"><span>tap zones</span><div class="seg" data-key="tapz"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
   <div class="row"><span>dim</span><input type="range" data-rng="dim" min="0" max="60" value="${Number(S.dim) || 0}" aria-label="dim screen"></div>
