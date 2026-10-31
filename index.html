@@ -90,6 +90,11 @@ body.side-open #side{transform:none}body.side-open #scrim{opacity:1;pointer-even
 #noteCard{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:50;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.28);padding:14px 16px 8px;max-height:46vh;display:flex;flex-direction:column}
 #noteCard[hidden]{display:none}#noteCard .nt{overflow-y:auto;font-size:15px;line-height:1.5;-webkit-overflow-scrolling:touch}
 #noteCard .na{display:flex;justify-content:flex-end;gap:18px;margin-top:6px}#noteCard .na button{padding:8px 2px;font-size:14px;color:var(--dim)}#noteCard #noteGo{color:var(--accent)}
+#runhead{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 8px);display:flex;padding:0 var(--rhx,40px);gap:calc(var(--rhx,40px) * 2);pointer-events:none;z-index:3;font:11px/1 -apple-system,system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)}
+#runhead[hidden]{display:none}#runhead span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+#bkBanner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 18px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;font-size:14px;color:var(--dim)}
+#bkBanner[hidden]{display:none}#bkBanner button{color:var(--accent);flex:none;font-size:14px}
+body.dragging #lib{outline:2px dashed var(--accent);outline-offset:-10px}
 #splash{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;transition:opacity .4s ease}
 #splash[hidden]{display:none}#splash.out{opacity:0;pointer-events:none}
 #splash .wm{font-size:58px;animation:spIn .7s ease both}
@@ -276,6 +281,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
   <input id="search" type="search" placeholder="search" hidden>
   <p id="hint" hidden>tap a cover to rename, move or delete it</p>
   <div id="crumb" hidden></div>
+  <div id="bkBanner" hidden><span id="bkTxt"></span><button id="bkNow">back up now</button></div>
   <section id="curWrap" hidden><h2 class="sec">reading now</h2><div id="cur"></div><h2 class="sec">shelf</h2></section>
   <main id="shelf"></main>
   <p id="vEmpty" hidden></p>
@@ -291,6 +297,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 </div>
 
 <div id="reader" class="view" hidden>
+  <div id="runhead" hidden><span id="rhL"></span><span id="rhR"></span></div>
   <div id="top" class="chrome">
     <button id="backBtn" class="l">library</button>
     <div class="mid" id="bookTitle"></div>
@@ -368,10 +375,19 @@ const THEMES = {
   document.head.append(st);
 }
 const THEME_MIGRATE = {espresso: 'cocoa', light: 'batter'};
-let S = {size:19, font:'serif', theme:'cotton', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:'', tapz:'normal', ttsRate:1, ttsVoice:'', spread:'auto', foot:'page', ttsBg:'on'};
+let S = {size:19, font:'serif', theme:'cotton', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:'', tapz:'normal', ttsRate:1, ttsVoice:'', spread:'auto', foot:'page', ttsBg:'on', head:'on', bkEvery:'30'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('alcove.settings') || '{}')); } catch (e) {}
 if (THEME_MIGRATE[S.theme]) S.theme = THEME_MIGRATE[S.theme];
-function saveSettings(){ try { localStorage.setItem('alcove.settings', JSON.stringify(S)); } catch (e) {} }
+const PB = ['size', 'font', 'layout', 'margin', 'spacing', 'just', 'hyph', 'para', 'spread'];
+const pick = (o, keys) => { const r = {}; keys.forEach(k => { if (o && k in o) r[k] = o[k]; }); return r; };
+const globalS = () => Object.assign({}, S, R.base || {});
+function saveSettings(){ try { localStorage.setItem('alcove.settings', JSON.stringify(globalS())); } catch (e) {} }
+function pbRestore(){ if (R.base){ Object.assign(S, R.base); R.base = null; } }
+function pbApply(meta){ pbRestore(); R.base = pick(S, PB); if (meta && meta.set && typeof meta.set === 'object') Object.assign(S, pick(meta.set, PB)); }
+function pbSet(key, val){
+  if (!PB.includes(key) || !R.base) return;
+  if (R.meta && R.meta.set){ R.meta.set[key] = val; dbPut('books', R.meta).catch(() => {}); } else R.base[key] = val;
+}
 const darkQ = matchMedia('(prefers-color-scheme: dark)');
 function theme(){ return S.theme === 'auto' ? (darkQ.matches ? 'graphite' : 'cotton') : (THEMES[S.theme] ? S.theme : 'cotton'); }
 function applyTheme(){
@@ -848,6 +864,8 @@ async function openBook(id){
     }
     Object.assign(R, {kind, book: bk, meta, back: [], doc: null, wrap: null, ready: kind === 'pdf', settle: null});
     meta.bm = meta.bm || []; meta.hl = meta.hl || [];
+    pbApply(meta);
+    $('#runhead').hidden = true;
     $('#reader').dataset.kind = kind;
     $('#bookTitle').textContent = meta.title;
     $('#backpill').hidden = true;
@@ -886,6 +904,7 @@ async function openBook(id){
 async function closeBook(fromPop){
   flushSave();
   ttsStop();
+  pbRestore(); saveSettings();
   closeSheet(true);
   closeLightbox();
   clearBack();
@@ -1145,6 +1164,7 @@ function applyLayout(initial){
   const base = sp2 ? Math.max(32, Math.min(80, w * 0.075)) : Math.max(22, Math.min(44, w * 0.075));
   R.geo = {w, h, px: Math.round(Math.max(12, Math.min(w * 0.2, base * mf))), py: Math.round(Math.max(18, h * (sp2 ? 0.06 : 0.035)))};
   R.geo.spread = sp2;
+  { const rh = $('#runhead'); rh.hidden = !(sp2 && S.head !== 'off' && R.kind !== 'pdf'); rh.style.setProperty('--rhx', R.geo.px + 'px'); $('#rhL').textContent = (R.meta && R.meta.title) || ''; }
   $('#reader').dataset.layout = S.layout;
   R.wrap.style.transform = ''; R.wrap.style.transition = '';
   d.getElementById('a-css').textContent = docCss();
@@ -1298,6 +1318,7 @@ function progress(){
   const pct = Math.round(p * 100) + '%', pi = S.foot === 'pct' ? null : pageInfo();
   $('#pct').textContent = pi ? pi.text : pct; $('#chap').textContent = label;
   $('#slider').value = Math.round(p * 1000);
+  { const rr = $('#rhR'); if (rr) rr.textContent = label || ''; }
   $('#sl1').textContent = label; $('#sl2').textContent = pct + (R.kind === 'pdf' || !R.book ? '' : ' · ' + timeLeftTxt());
   clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 600);
   clearTimeout(mkTimer); mkTimer = setTimeout(refreshMark, 300);
@@ -2438,6 +2459,7 @@ function plainMeta(m){
   BK_KEYS.forEach(k => { o[k] = Number(m[k]) || 0; });
   o.finishedCleared = !!m.finishedCleared; o.legacy = !!m.legacy;
   o.folder = typeof m.folder === 'string' ? m.folder : '';
+  if (m.set && typeof m.set === 'object') o.set = pick(m.set, PB);
   o.pos = bestPos(m); o.bm = m.bm || []; o.hl = m.hl || [];
   return o;
 }
@@ -2453,6 +2475,7 @@ function cleanRec(r){
   o.bm = Array.isArray(r.bm) ? r.bm.filter(ok) : [];
   o.hl = Array.isArray(r.hl) ? r.hl.filter(ok) : [];
   o.folder = typeof r.folder === 'string' ? r.folder.slice(0, 40) : '';
+  if (r.set && typeof r.set === 'object'){ const st = {}; for (const k of PB) if (k in r.set && typeof r.set[k] === (k === 'size' ? 'number' : 'string')) st[k] = r.set[k]; if (Object.keys(st).length) o.set = st; }
   o.file = typeof r.file === 'string' && /^files\/[\w.\-]+$/.test(r.file) ? r.file : '';
   o.cover = typeof r.cover === 'string' && /^covers\/[\w.\-]+$/.test(r.cover) ? r.cover : '';
   return o;
@@ -2473,7 +2496,7 @@ async function exportFull(){
     list.push(rec);
   }
   const enc = new TextEncoder();
-  const man = {app: 'alcove', format: 'alcove-backup', version: 1, created: Date.now(), count: list.length, settings: S};
+  const man = {app: 'alcove', format: 'alcove-backup', version: 1, created: Date.now(), count: list.length, settings: globalS()};
   entries.unshift({name: 'manifest.json', bytes: enc.encode(JSON.stringify(man, null, 1))}, {name: 'books.json', bytes: enc.encode(JSON.stringify(list))});
   const blob = await buildZip(entries, (n, t) => toast(`packing ${n} of ${t}…`, true));
   return new File([blob], stampName({pre: 'backup-', suf: '.alcove'}), {type: 'application/octet-stream'});
@@ -2537,6 +2560,7 @@ function mergeInto(a, b){
   const union = (x, y) => { const seen = new Set((x || []).map(i => i.id)); return (x || []).concat((y || []).filter(i => !seen.has(i.id))); };
   a.bm = union(a.bm, b.bm); a.hl = union(a.hl, b.hl);
   if (!a.folder && b.folder) a.folder = b.folder;
+  if (!a.set && b.set) a.set = b.set;
   a.secs = Math.max(a.secs || 0, b.secs || 0);
   a.v = 2;
 }
@@ -2575,13 +2599,25 @@ async function applyImport(pkg, mode){
 }
 
 let BK = {};
+const STORE = {persisted: false};
+try { if (navigator.storage && navigator.storage.persist){ navigator.storage.persisted().then(p => { STORE.persisted = p; if (!p) navigator.storage.persist().then(ok => { STORE.persisted = ok; }).catch(() => {}); }).catch(() => {}); } } catch (e) {}
 const ago = t => { const d = Math.floor((Date.now() - t) / 864e5); return d < 1 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago'; };
 function lastBackupAt(){ try { return Number(localStorage.getItem('alcove.lastBackup')) || 0; } catch (e) { return 0; } }
-const bkOverdue = () => lib.length > 0 && (!lastBackupAt() || Date.now() - lastBackupAt() > 30 * 864e5);
+const bkOverdue = () => { const ev = Number(S.bkEvery); return lib.length > 0 && ev > 0 && (!lastBackupAt() || Date.now() - lastBackupAt() > ev * 864e5); };
 function renderBkNote(){
   const t = lastBackupAt(), el = $('#bkNote');
   el.textContent = !lib.length ? '' : t ? 'last backup ' + ago(t) : 'no backup yet';
   el.style.color = bkOverdue() ? 'var(--accent)' : '';
+  const bb = $('#bkBanner'); if (bb){ bb.hidden = !bkOverdue(); $('#bkTxt').textContent = t ? 'last backup ' + ago(t) : 'no backup yet'; }
+}
+async function storageNote(body){
+  try {
+    const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
+    const mb = est && est.usage ? (est.usage / 1048576 >= 10 ? Math.round(est.usage / 1048576) : (est.usage / 1048576).toFixed(1)) + ' MB used. ' : '';
+    const d = document.createElement('div'); d.className = 'empty';
+    d.textContent = mb + (STORE.persisted ? 'storage is protected from automatic clean-up.' : 'your phone may clear this app\'s storage if it runs low, so keep a recent backup.');
+    if (body.isConnected) body.append(d);
+  } catch (e) {}
 }
 function buildBackup(body){
   body.replaceChildren();
@@ -2634,6 +2670,8 @@ function buildBackup(body){
   }
   const t = lastBackupAt();
   note(t ? `last full backup: ${fmtStamp(t)}.` : 'No full backup yet. Your books live only in this browser, so a backup is worth making.');
+  if (BK.start){ BK.start = false; (async () => { if (BK.busy) return; BK.busy = true; try { await make(exportFull, 'full')(); } catch (e) { toast('something went wrong. nothing was changed.'); } BK.busy = false; })(); }
+  storageNote(body);
   act('full backup', 'books, reading positions, bookmarks, highlights, dates and settings in one .alcove file', make(exportFull, 'full'));
   act('notes only', 'a small file with just your highlights, bookmarks, progress and dates', make(exportNotes, 'notes'));
   act('highlights as text', 'a readable .md file you can open anywhere', make(exportText, 'text'));
@@ -2655,7 +2693,7 @@ function openSheet(kind, arg){
   s.classList.toggle('top', kind === 'edit');
   if (kind === 'toc'){ $('#sheetTitle').textContent = R.meta ? R.meta.title : 'contents'; buildContents(body); }
   else if (kind === 'edit'){ $('#sheetTitle').textContent = 'edit details'; buildEdit(body, arg); }
-  else if (kind === 'backup'){ BK = {}; $('#sheetTitle').textContent = 'backup & restore'; buildBackup(body); }
+  else if (kind === 'backup'){ BK = {start: !!BK.start}; $('#sheetTitle').textContent = 'backup & restore'; buildBackup(body); }
   else if (kind === 'listen'){ $('#sheetTitle').textContent = 'read aloud'; buildListen(body); }
   else if (kind === 'define'){ $('#sheetTitle').textContent = arg; buildDefine(body, arg); }
   else if (kind === 'music'){ $('#sheetTitle').textContent = 'music'; buildMusic(body); }
@@ -2777,8 +2815,15 @@ function bindSettings(body){
   body.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.go){ openSheet(b.dataset.go); return; }
-    if (b.dataset.step) S.size = Math.max(13, Math.min(32, S.size + Number(b.dataset.step)));
-    else if (b.dataset.val) S[b.closest('[data-key]').dataset.key] = b.dataset.val;
+    if (b.dataset.scope){
+      if (!R.meta || !R.base) return;
+      if (b.dataset.scope === 'book'){ if (!R.meta.set) R.meta.set = pick(S, PB); }
+      else if (R.meta.set){ delete R.meta.set; Object.assign(S, R.base); }
+      dbPut('books', R.meta).catch(() => {}); saveSettings(); applyLayout();
+      const st0 = body.scrollTop; buildSettings(body); body.scrollTop = st0; return;
+    }
+    if (b.dataset.step){ S.size = Math.max(13, Math.min(32, S.size + Number(b.dataset.step))); pbSet('size', S.size); }
+    else if (b.dataset.val){ const k0 = b.closest('[data-key]').dataset.key; S[k0] = b.dataset.val; pbSet(k0, b.dataset.val); }
     else return;
     const lk = b.closest('[data-key]') && b.closest('[data-key]').dataset.key === 'layout', st = body.scrollTop;
     saveSettings(); applyTheme(); sync(); applyLayout();
@@ -2788,7 +2833,9 @@ function bindSettings(body){
 }
 /* reading settings: only matter inside a book */
 function buildSettings(body){
+  const own = !!(R.meta && R.meta.set);
   body.innerHTML = `
+  <div class="row"><span>apply changes to</span><div class="seg" id="scopeSeg"><button data-scope="all" class="${own ? '' : 'on'}">all books</button><button data-scope="book" class="${own ? 'on' : ''}">this book</button></div></div>
   <div class="row"><span>text size</span><div class="step"><button data-step="-1" aria-label="smaller">A−</button><b id="sv"></b><button data-step="1" aria-label="larger">A+</button></div></div>
   <div class="row"><span>typeface</span><div class="seg" data-key="font"><button data-val="serif">serif</button><button data-val="sans">sans</button></div></div>
   <div class="row"><span>layout</span><div class="seg" data-key="layout"><button data-val="pages">pages</button><button data-val="scroll">scroll</button></div></div>
@@ -2798,6 +2845,7 @@ function buildSettings(body){
   <div class="row"><span>alignment</span><div class="seg" data-key="just"><button data-val="justify">justified</button><button data-val="left">left</button></div></div>
   <div class="row"><span>hyphenation</span><div class="seg" data-key="hyph"><button data-val="on">on</button><button data-val="off">off</button></div></div>
   <div class="row"><span>paragraphs</span><div class="seg" data-key="para"><button data-val="book">as book</button><button data-val="indent">indent</button><button data-val="block">spaced</button></div></div>
+  <div class="row"><span>running header</span><div class="seg" data-key="head"><button data-val="on">on</button><button data-val="off">off</button></div></div>
   <div class="row"><span>footer shows</span><div class="seg" data-key="foot"><button data-val="page">page</button><button data-val="pct">percent</button></div></div>
   <div class="row"><span>tap zones</span><div class="seg" data-key="tapz"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
   <div class="row"><span>dim</span><input type="range" data-rng="dim" min="0" max="60" value="${Number(S.dim) || 0}" aria-label="dim screen"></div>
@@ -2811,16 +2859,29 @@ function buildAppSettings(body){
   const t = lastBackupAt();
   body.innerHTML = `
   <div class="row wrap"><span>theme</span><div class="swgrid" data-key="theme">${themeSwatches()}</div></div>
+  <div class="row"><span>backup reminder</span><div class="seg" data-key="bkEvery"><button data-val="14">2 weeks</button><button data-val="30">monthly</button><button data-val="60">2 months</button><button data-val="0">off</button></div></div>
   <button class="toc" data-go="backup">backup &amp; restore<div class="sub">${t ? 'last full backup ' + ago(t) : 'no full backup yet'}</div></button>`;
   bindSettings(body);
 }
 
 /* =============== wiring =============== */
 $('#addBtn').onclick = $('#addBtn2').onclick = () => $('#file').click();
+function takeFiles(list){
+  const fl = [...list]; if (!fl.length) return;
+  const books = fl.filter(f => /\.(epub|pdf)$/i.test(f.name) || /epub|pdf/.test(f.type));
+  const songs = fl.filter(f => /^audio\//.test(f.type) || /\.(mp3|m4a|aac|wav|flac|ogg|opus)$/i.test(f.name));
+  if (books.length) addFiles(books);
+  if (songs.length) mAddFiles(songs);
+}
+['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, e => { if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files')){ e.preventDefault(); document.body.classList.add('dragging'); } }));
+['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => { if (ev === 'drop' || e.target === document.documentElement || !e.relatedTarget) document.body.classList.remove('dragging'); }));
+document.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length){ e.preventDefault(); takeFiles(e.dataTransfer.files); } });
+if ('launchQueue' in window) launchQueue.setConsumer(async p => { const fl = []; for (const h of (p.files || [])){ try { fl.push(await h.getFile()); } catch (e) {} } takeFiles(fl); });
 $('#file').onchange = e => { const f = e.target.files; if (f && f.length) addFiles(f); e.target.value = ''; };
 $('#sortBtn').onclick = () => openSheet('sort');
 $('#appSetBtn').onclick = () => openSheet('app');
 $('#menuBtn').onclick = openSide;
+$('#bkNow').onclick = () => { BK.start = true; openSheet('backup'); };
 $('#scrim').onclick = closeSide;
 $('#editBtn').onclick = () => { editing = !editing; renderLib(); };
 $('#search').oninput = renderLib;
@@ -2990,15 +3051,6 @@ applyTheme();
   if (last) sp.remove();
   else { sp.hidden = false; setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 450); }, 800); }
 }
-setTimeout(() => {
-  try {
-    if (!bkOverdue() || !$('#reader').hidden) return;
-    const last = Number(localStorage.getItem('alcove.bkNudge')) || 0;
-    if (Date.now() - last < 7 * 864e5) return;
-    localStorage.setItem('alcove.bkNudge', String(Date.now()));
-    toast('time for a backup. menu \u2192 backup & restore', true); setTimeout(() => $('#toast').classList.remove('on'), 6000);
-  } catch (e) {}
-}, 4500);
 loadLib().then(() => {
   let last = null;
   try { last = localStorage.getItem('alcove.last'); } catch (e) {}
