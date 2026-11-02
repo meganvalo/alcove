@@ -95,6 +95,14 @@ body.side-open #side{transform:none}body.side-open #scrim{opacity:1;pointer-even
 #bkBanner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 18px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;font-size:14px;color:var(--dim)}
 #bkBanner[hidden]{display:none}#bkBanner button{color:var(--accent);flex:none;font-size:14px}
 body.dragging #lib{outline:2px dashed var(--accent);outline-offset:-10px}
+#lm{position:fixed;inset:0;z-index:130;background:#000;color:#b8b8b8;display:flex;flex-direction:column;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 20px) 26px calc(env(safe-area-inset-bottom,0px) + 24px)}
+#lm[hidden]{display:none}#lmX{align-self:flex-end;color:#8a8a8a;font-size:15px;padding:8px 0}
+.lmhead{text-align:center;margin-top:10px;max-width:640px}#lmBook{font:600 17px -apple-system,system-ui,sans-serif;color:#d0d0d0}#lmChap{margin-top:6px;font-size:14px;color:#7a7a7a}
+#lmText{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;font:italic 22px/1.55 ui-serif,Georgia,serif;color:#8d8d8d;max-width:640px;overflow:hidden;padding:18px 4px}
+.lmctl{display:flex;align-items:center;justify-content:center;gap:12px}.lmctl button{width:56px;height:56px;display:flex;align-items:center;justify-content:center;color:#dcdcdc;border-radius:50%}
+.lmctl button.big{width:84px;height:84px;border:1.5px solid #444}.lmctl svg{width:28px;height:28px}.lmctl .big svg{width:34px;height:34px}
+.lmrow{display:flex;gap:28px;margin-top:22px}.lmrow button{color:#9a9a9a;font-size:15px;padding:10px 4px}
+#lmNote{margin:16px 0 0;font-size:12px;color:#666;text-align:center;max-width:420px;line-height:1.4}
 #splash{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;transition:opacity .4s ease}
 #splash[hidden]{display:none}#splash.out{opacity:0;pointer-events:none}
 #splash .wm{font-size:58px;animation:spIn .7s ease both}
@@ -266,6 +274,14 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 
 <div id="scrim"></div>
 <aside id="side"><div class="wm">alcove.</div><div id="sideBody"></div></aside>
+<div id="lm" hidden>
+  <button id="lmX" aria-label="close listening mode">close</button>
+  <div class="lmhead"><div id="lmBook"></div><div id="lmChap"></div></div>
+  <div id="lmText"></div>
+  <div class="lmctl"><button data-lm="chapPrev" aria-label="previous chapter"></button><button data-lm="paraPrev" aria-label="previous paragraph"></button><button data-lm="play" id="lmPlay" class="big" aria-label="play or pause"></button><button data-lm="paraNext" aria-label="next paragraph"></button><button data-lm="chapNext" aria-label="next chapter"></button></div>
+  <div class="lmrow"><button id="lmRate">1×</button><button id="lmSleep">sleep: off</button></div>
+  <p id="lmNote"></p>
+</div>
 <div id="dimLayer" hidden></div>
 <div id="splash" hidden><div class="wm">alcove.</div></div>
 <div id="lib" class="view">
@@ -375,7 +391,7 @@ const THEMES = {
   document.head.append(st);
 }
 const THEME_MIGRATE = {espresso: 'cocoa', light: 'batter'};
-let S = {size:19, font:'serif', theme:'cotton', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:'', tapz:'normal', ttsRate:1, ttsVoice:'', spread:'auto', foot:'page', ttsBg:'on', head:'on', bkEvery:'30'};
+let S = {size:19, font:'serif', theme:'cotton', layout:'pages', margin:'normal', spacing:'normal', pdf:'auto', sort:'recent', folders:[], view:'lib', days:{}, rdB:0, rdT:0, just:'justify', hyph:'on', para:'book', dim:0, warm:0, mRep:'all', mShuf:false, mLast:'', tapz:'normal', ttsRate:1, ttsVoice:'', spread:'auto', foot:'page', ttsBg:'on', head:'on', bkEvery:'30', ttsClean:'on', ttsAwake:'on'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('alcove.settings') || '{}')); } catch (e) {}
 if (THEME_MIGRATE[S.theme]) S.theme = THEME_MIGRATE[S.theme];
 const PB = ['size', 'font', 'layout', 'margin', 'spacing', 'just', 'hyph', 'para', 'spread'];
@@ -903,7 +919,7 @@ async function openBook(id){
 }
 async function closeBook(fromPop){
   flushSave();
-  ttsStop();
+  ttsStop(); $('#lm').hidden = true; wakeOff();
   pbRestore(); saveSettings();
   closeSheet(true);
   closeLightbox();
@@ -1474,13 +1490,27 @@ let srchTok = 0, lastQ = '';
 async function chText(i){
   const bk = R.book; bk.txt = bk.txt || new Map();
   if (bk.txt.has(i)) return bk.txt.get(i);
-  let raw = '';
+  let raw = '', skip = [], breaks = [], heads = new Set();
   try {
     const d = new DOMParser().parseFromString(await bk.zip.text(bk.spine[i].path), 'text/html');
     d.querySelectorAll('script,link,style,iframe,object,embed,meta,base,audio,video,form,frame,frameset').forEach(n => n.remove());
     raw = d.body ? d.body.textContent : '';
+    if (d.body){
+      const w = d.createTreeWalker(d.body, 4); let n, pos = 0, last = null;
+      while ((n = w.nextNode())){
+        const el = n.parentElement, len = n.data.length, blk = el && el.closest('p,div,h1,h2,h3,h4,h5,h6,li,blockquote,dd,dt,td,th,section,article,aside,pre,figcaption');
+        if (blk !== last){ if (pos > 0) breaks.push(pos); if (blk && /^H[1-6]$/.test(blk.tagName)) heads.add(pos); last = blk; }
+        if (len && el){
+          const ref = el.closest('[epub\\:type~="noteref"],[role="doc-noteref"]'), sup = el.closest('sup,sub');
+          if (ref || (sup && /^[\s\[(]*[\d*\u2020\u2021\u00a7]{1,4}[\])]*\s*$/.test(n.data))){
+            const pv = skip[skip.length - 1]; if (pv && pv[1] === pos) pv[1] = pos + len; else skip.push([pos, pos + len]);
+          }
+        }
+        pos += len;
+      }
+    }
   } catch (e) {}
-  const v = {raw, low: fold(raw)}; bk.txt.set(i, v); return v;
+  const v = {raw, low: fold(raw), skip, breaks, heads}; bk.txt.set(i, v); return v;
 }
 async function pageText(n){
   P.txt = P.txt || new Map();
@@ -1731,26 +1761,64 @@ const synth = window.speechSynthesis;
 const TT = {on: false, paused: true, sents: [], si: 0, ci: -1, tok: 0, u: null, sleepAt: 0, sleepEnd: false, selfAt: 0, unlocked: false};
 const tSleep = ms => new Promise(r => setTimeout(r, ms));
 const ABBR = /\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|No|Mt|Capt|Col|Gen|Lt|Sgt)\.$/;
-function splitSent(raw){
-  const out = [], re = /[^.!?\u2026\n]+(?:[.!?\u2026]+["'\u201d\u2019)\]]*|\n+|$)/g;
-  let m, ps = -1;
-  const push = (a, b) => {
-    const text = raw.slice(a, b).replace(/\s+/g, ' ').trim();
-    if (/[\p{L}\p{N}]/u.test(text)) out.push({s: a, e: b, text});
-  };
-  while ((m = re.exec(raw))){
-    if (m[0].length === 0){ re.lastIndex++; continue; }
-    let a = ps >= 0 ? ps : m.index; const b = m.index + m[0].length;
-    if (ABBR.test(m[0].trim()) && b < raw.length){ ps = a; continue; }
-    ps = -1;
-    while (b - a > 240){ let cut = raw.lastIndexOf(' ', a + 220); if (cut <= a + 80) cut = a + 220; push(a, cut); a = cut; }
-    push(a, b);
+function romanToInt(r){
+  if (!r || !/^M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/i.test(r)) return 0;
+  const m = {I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000}; let t = 0, pv = 0;
+  for (const c of r.toUpperCase().split('').reverse()){ const v = m[c]; t += v < pv ? -v : v; pv = v; }
+  return t;
+}
+function sayText(info, a, b){
+  let t = '', pos = a;
+  for (const [x, y] of (info.skip || [])){ if (y <= a) continue; if (x >= b) break; const xs = Math.max(x, a), ys = Math.min(y, b); t += info.raw.slice(pos, xs); pos = ys; }
+  t += info.raw.slice(pos, b);
+  t = t.replace(/\s+/g, ' ').trim();
+  if (S.ttsClean !== 'off'){
+    t = t.replace(/\b((?:Chapter|Part|Book|Act|Volume|Section)\s+)([IVXLCDM]+)\b/gi, (m, p, r) => { const n = romanToInt(r); return n ? p + n : m; })
+      .replace(/\.{2,}|\u2026/g, ', ').replace(/\s*[\u2014\u2013]\s*/g, ', ').replace(/[*#_~^|]+/g, ' ').replace(/\[\d{1,3}\]/g, '')
+      .replace(/\s+,/g, ',').replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').trim();
+  }
+  return t;
+}
+function splitSent(info){
+  const raw = info.raw, out = [], cuts = [0, ...(info.breaks || []).filter(x => x > 0 && x < raw.length), raw.length];
+  const pk = ['', 0];
+  for (let k = 0; k + 1 < cuts.length; k++){
+    const A = cuts[k], B = cuts[k + 1]; if (B <= A) continue;
+    const blockText = raw.slice(A, B), head = !!(info.heads && info.heads.has(A));
+    if (!/[\p{L}\p{N}]/u.test(blockText)){
+      if (/\S/.test(blockText) && out.length) out[out.length - 1].pause = Math.max(out[out.length - 1].pause, 1000);
+      continue;
+    }
+    const re = /[^.!?\u2026\n]+(?:[.!?\u2026]+["'\u201d\u2019)\]]*|\n+|$)/g, first = out.length;
+    let m, ps = -1;
+    const push = (a, b) => {
+      const text = raw.slice(a, b).replace(/\s+/g, ' ').trim(), say = sayText(info, a, b);
+      if (/[\p{L}\p{N}]/u.test(say)) out.push({s: a, e: b, text, say, pb: false, pause: 0});
+    };
+    while ((m = re.exec(blockText))){
+      if (m[0].length === 0){ re.lastIndex++; continue; }
+      let a = A + (ps >= 0 ? ps : m.index); const b = A + m.index + m[0].length;
+      if (ABBR.test(m[0].trim()) && b < B){ ps = a - A; continue; }
+      ps = -1;
+      while (b - a > 240){ let cut = raw.lastIndexOf(' ', a + 220); if (cut <= a + 80) cut = a + 220; push(a, cut); a = cut; }
+      push(a, b);
+    }
+    if (out.length > first){ const l = out[out.length - 1]; l.pb = true; l.pause = head ? 700 : 350; }
   }
   return out;
 }
-const ttsText = async ci => R.kind === 'pdf' ? (await pageText(ci)).raw : (await chText(ci)).raw;
-async function ttsLoad(ci, off, frac){
-  TT.ci = ci; const raw = await ttsText(ci); TT.sents = splitSent(raw);
+const ttsText = async ci => R.kind === 'pdf' ? await pageText(ci) : await chText(ci);
+const SKIP_CH = /^(cover|title page|copyright|dedication|contents|table of contents|epigraph|acknowledg(e)?ments?|about the author|also by|other books|notes|endnotes|footnotes|newsletter|excerpt|preview|praise|reviews|bibliography|glossary|index)\b/i;
+function ttsSkippable(ci, info){
+  if (S.ttsClean === 'off' || R.kind === 'pdf') return false;
+  const lb = (labelFor(ci) || '').trim();
+  if (lb && SKIP_CH.test(lb)) return true;
+  return /^\s*(copyright|all rights reserved|table of contents)\b/i.test(info.raw.slice(0, 80));
+}
+async function ttsLoad(ci, off, frac, auto){
+  TT.ci = ci; const info = await ttsText(ci); TT.sents = splitSent(info);
+  if (auto && ttsSkippable(ci, info)){ TT.sents = []; TT.si = 0; return; }
+  const raw = info.raw;
   if (off === null || off === undefined) off = Math.floor((frac || 0) * raw.length);
   const k = TT.sents.findIndex(x => x.s >= off - 1); TT.si = k < 0 ? TT.sents.length : k;
 }
@@ -1775,12 +1843,17 @@ function ttsShow(s){
   const out = S.layout === 'pages' ? (rc.right <= 0 || rc.left >= W) : (rc.top < 8 || rc.bottom > H * .85);
   if (out){ TT.selfAt = Date.now(); gotoChapter(TT.ci, {off: s.s}, false); }
 }
+const NOVELTY = /^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Wobble|Good News|Jester|Organ|Pipe Organ|Superstar|Trinoids|Whisper|Zarvox|Deranged|Hysterical|Fred|Junior|Ralph|Kathy)\b/;
+const voiceQ = v => { const t = (v.name + ' ' + v.voiceURI).toLowerCase(); return /premium/.test(t) ? 3 : /enhanced|natural|neural|siri|google/.test(t) ? 2 : 1; };
 function ttsVoices(){
   if (!synth) return [];
   const all = synth.getVoices(), lang = ((R.doc && R.doc.documentElement.lang) || 'en').slice(0, 2).toLowerCase();
   const m = all.filter(v => v.lang.toLowerCase().startsWith(lang)); return m.length ? m : all;
 }
-function ttsVoice(){ const vs = ttsVoices(); return vs.find(v => v.voiceURI === S.ttsVoice) || vs.find(v => v.default) || vs[0] || null; }
+function ttsVoice(){
+  const vs = ttsVoices(); const cur = vs.find(v => v.voiceURI === S.ttsVoice); if (cur) return cur;
+  return vs.filter(v => !NOVELTY.test(v.name)).sort((a, b) => voiceQ(b) - voiceQ(a) || (b.default ? 1 : 0) - (a.default ? 1 : 0))[0] || vs[0] || null;
+}
 async function ttsSpeak(fresh){
   const tok = ++TT.tok;
   if (TT.sleepAt && Date.now() >= TT.sleepAt){ ttsStop(); toast('sleep timer: stopped reading'); return; }
@@ -1789,14 +1862,16 @@ async function ttsSpeak(fresh){
     if (TT.sleepEnd){ ttsStop(); toast('sleep timer: stopped reading'); return; }
     const next = TT.ci + 1, total = R.kind === 'pdf' ? P.n : R.book.spine.length;
     if (next >= total){ ttsStop(); toast('reached the end'); return; }
-    await ttsLoad(next, 0); if (tok !== TT.tok) return;
+    await ttsLoad(next, 0, 0, true); if (tok !== TT.tok) return;
     await ttsEnsure(next, 0); if (tok !== TT.tok) return;
     s = TT.sents[TT.si];
   }
+  const pv = TT.sents[TT.si - 1];
+  if (!fresh && pv && pv.pause && S.ttsClean !== 'off'){ await tSleep(pv.pause / (Number(S.ttsRate) || 1)); if (tok !== TT.tok) return; }
   await ttsEnsure(TT.ci, s.s); if (tok !== TT.tok) return;
   ttsShow(s); actAt = Date.now(); ttsRefresh();
-  const u = new SpeechSynthesisUtterance(s.text), v = ttsVoice();
-  if (v){ u.voice = v; u.lang = v.lang; }
+  const u = new SpeechSynthesisUtterance(s.say), v = ttsVoice();
+  if (v){ try { u.voice = v; } catch (e) {} u.lang = v.lang; }
   u.rate = Number(S.ttsRate) || 1;
   u.onend = () => { if (tok === TT.tok && !TT.paused){ TT.si++; ttsSpeak(false); } };
   u.onerror = e => { if (tok !== TT.tok || e.error === 'interrupted' || e.error === 'canceled') return; TT.paused = true; ttsRefresh(); toast('read aloud stopped'); };
@@ -1812,7 +1887,12 @@ function msMusic(){
     ms.setActionHandler('nexttrack', () => mNext(false)); ms.setActionHandler('previoustrack', mPrev);
   } catch (e) {}
 }
+let wl = null;
+async function wakeOn(){ try { if ('wakeLock' in navigator && !wl){ wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) {} }
+function wakeOff(){ try { wl && wl.release(); } catch (e) {} wl = null; }
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !wl && (!$('#lm').hidden || (TT.on && !TT.paused && S.ttsAwake !== 'off'))) wakeOn(); });
 function kaStart(){
+  if (S.ttsAwake !== 'off') wakeOn();
   if (S.ttsBg === 'off') return;
   try {
     if (!kaAu){
@@ -1827,10 +1907,10 @@ function kaStart(){
     ms.metadata = new MediaMetadata({title: m.title || 'alcove.', artist: m.author || 'reading aloud'});
     ms.playbackState = 'playing';
     ms.setActionHandler('play', () => { if (TT.paused) ttsToggle(); }); ms.setActionHandler('pause', () => { if (!TT.paused) ttsPause(); });
-    ms.setActionHandler('nexttrack', () => ttsStep(1)); ms.setActionHandler('previoustrack', () => ttsStep(-1));
+    ms.setActionHandler('nexttrack', () => ttsPara(1)); ms.setActionHandler('previoustrack', () => ttsPara(-1));
   } catch (e) {}
 }
-function kaStop(){ try { kaAu && kaAu.pause(); } catch (e) {} msMusic(); }
+function kaStop(){ try { kaAu && kaAu.pause(); } catch (e) {} msMusic(); if ($('#lm').hidden) wakeOff(); }
 function ttsUnlock(){
   if (TT.unlocked || !synth) return; TT.unlocked = true;
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch (e) {}
@@ -1850,6 +1930,35 @@ function ttsStep(d){
   if (!TT.on){ ttsStart(); return; }
   TT.si = Math.max(0, Math.min(TT.sents.length, TT.si + d)); TT.paused = false; ttsSpeak(true);
 }
+async function ttsChap(d){
+  if (!TT.on){ ttsStart(); return; }
+  const total = R.kind === 'pdf' ? P.n : R.book.spine.length; let ci = TT.ci;
+  if (!(d < 0 && TT.si > 2)) ci = Math.max(0, Math.min(total - 1, ci + d));
+  TT.tok++; try { synth.cancel(); } catch (e) {}
+  await ttsLoad(ci, 0, 0); TT.paused = false; kaStart(); ttsSpeak(true); ttsRefresh();
+}
+function ttsPara(d){
+  if (!TT.on){ ttsStart(); return; }
+  const st = i => i <= 0 || TT.sents[i - 1].pb; let i = TT.si;
+  if (d > 0){ i++; while (i < TT.sents.length && !st(i)) i++; if (i >= TT.sents.length){ ttsChap(1); return; } }
+  else {
+    if (!st(i)){ while (i > 0 && !st(i)) i--; }
+    else { if (i <= 0){ ttsChap(-1); return; } i--; while (i > 0 && !st(i)) i--; }
+  }
+  TT.si = Math.max(0, i); TT.paused = false; ttsSpeak(true);
+}
+function ttsSetRate(r){ S.ttsRate = r; saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); ttsRefresh(); }
+function ttsSetSleep(v){ TT.sleepEnd = v === 'end'; TT.sleepMin = Number(v) || 0; TT.sleepAt = TT.sleepMin ? Date.now() + TT.sleepMin * 60000 : 0; ttsRefresh(); }
+function ttsCmd(c){
+  if (c === 'play') ttsToggle(); else if (c === 'paraPrev') ttsPara(-1); else if (c === 'paraNext') ttsPara(1);
+  else if (c === 'chapPrev') ttsChap(-1); else if (c === 'chapNext') ttsChap(1);
+}
+function ttsHear(){
+  if (!synth) return; if (TT.on && !TT.paused) ttsPause();
+  try { synth.cancel(); const u = new SpeechSynthesisUtterance('It was a quiet evening, and the lantern glowed warmly in the hall.'), v = ttsVoice(); if (v){ try { u.voice = v; } catch (e) {} u.lang = v.lang; } u.rate = Number(S.ttsRate) || 1; synth.speak(u); } catch (e) {}
+}
+function openLM(){ $('#lm').hidden = false; wakeOn(); ttsRefresh(); }
+function closeLM(){ $('#lm').hidden = true; if (!(TT.on && !TT.paused && S.ttsAwake !== 'off')) wakeOff(); }
 let ttsRt;
 function ttsFromView(){
   clearTimeout(ttsRt);
@@ -1859,40 +1968,81 @@ function ttsFromView(){
     await ttsLoad(an.i, an.off, 0); ttsSpeak(true);
   }, 500);
 }
+const tIc = {
+  pp: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  pn: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>'
+};
+const RATES = [.8, 1, 1.25, 1.5, 2], SLEEPS = ['0', '15', '30', 'end'];
+const sleepLabel = () => TT.sleepEnd ? 'chapter' : TT.sleepAt ? (TT.sleepMin + 'm') : 'off';
 function ttsRefresh(){
-  const b = $('#ttsBtn'); if (b) b.classList.toggle('on', TT.on && !TT.paused);
+  const playing = TT.on && !TT.paused;
+  const b = $('#ttsBtn'); if (b) b.classList.toggle('on', playing);
+  const rate = Number(S.ttsRate) || 1;
+  const lm = $('#lm');
+  if (lm && !lm.hidden){
+    $('#lmBook').textContent = (R.meta && R.meta.title) || ''; $('#lmChap').textContent = (R.kind === 'pdf' ? 'Page ' + TT.ci : (TT.ci >= 0 && labelFor(TT.ci)) || '') || '';
+    $('#lmText').textContent = (TT.sents[TT.si] && TT.sents[TT.si].text) || (TT.on ? '' : 'press play to begin');
+    $('#lmPlay').innerHTML = playing ? mIc.pause : mIc.play;
+    $('#lmRate').textContent = rate + '\u00d7'; $('#lmSleep').textContent = 'sleep: ' + sleepLabel();
+    $('#lmNote').textContent = ('wakeLock' in navigator) ? 'the screen stays on while this is open.' : 'tip: set Auto-Lock to Never (Settings \u2192 Display & Brightness) so reading isn\'t cut off.';
+  }
   if (!$('#tNow')) return;
   const sl = TT.sleepAt ? Math.max(1, Math.round((TT.sleepAt - Date.now()) / 60000)) : 0;
   $('#tNow').textContent = (TT.on ? (TT.paused ? 'paused' : 'reading aloud') : 'ready') + (TT.sleepEnd ? ' \u00b7 stops at chapter end' : sl ? ' \u00b7 stops in ~' + sl + ' min' : '');
-  $('[data-t=play]').innerHTML = TT.on && !TT.paused ? mIc.pause : mIc.play;
-  document.querySelectorAll('#tBg button').forEach(x => x.classList.toggle('on', x.dataset.bg === (S.ttsBg === 'off' ? 'off' : 'on')));
-  document.querySelectorAll('#tRate button').forEach(x => x.classList.toggle('on', Number(x.dataset.rate) === (Number(S.ttsRate) || 1)));
-  document.querySelectorAll('#tSleep button').forEach(x => x.classList.toggle('on', x.dataset.sl === (TT.sleepEnd ? 'end' : TT.sleepAt ? String(TT.sleepMin) : '0')));
+  $('[data-t=play]').innerHTML = playing ? mIc.pause : mIc.play;
+  const on = (sel, f) => document.querySelectorAll(sel).forEach(x => x.classList.toggle('on', f(x)));
+  on('#tBg button', x => x.dataset.bg === (S.ttsBg === 'off' ? 'off' : 'on'));
+  on('#tClean button', x => x.dataset.cl === (S.ttsClean === 'off' ? 'off' : 'on'));
+  on('#tAwake button', x => x.dataset.aw === (S.ttsAwake === 'off' ? 'off' : 'on'));
+  on('#tRate button', x => Number(x.dataset.rate) === rate);
+  on('#tSleep button', x => x.dataset.sl === (TT.sleepEnd ? 'end' : TT.sleepAt ? String(TT.sleepMin) : '0'));
 }
 function buildListen(body){
   body.innerHTML = `<div class="music"><div class="mnow" id="tNow"></div>
-    <div class="mctl" style="justify-content:center;gap:26px"><button data-t="prev" aria-label="previous sentence">${mIc.prev}</button><button data-t="play" class="big" aria-label="play or pause"></button><button data-t="next" aria-label="next sentence">${mIc.next}</button></div>
-    <div class="row"><span>speed</span><div class="seg" id="tRate">${[.8, 1, 1.25, 1.5, 2].map(r => `<button data-rate="${r}">${r}\u00d7</button>`).join('')}</div></div>
+    <div class="mctl"><button data-t="chapPrev" aria-label="previous chapter">${mIc.prev}</button><button data-t="paraPrev" aria-label="previous paragraph">${tIc.pp}</button><button data-t="play" class="big" aria-label="play or pause"></button><button data-t="paraNext" aria-label="next paragraph">${tIc.pn}</button><button data-t="chapNext" aria-label="next chapter">${mIc.next}</button></div>
+    <div class="row"><span>speed</span><div class="seg" id="tRate">${RATES.map(r => `<button data-rate="${r}">${r}\u00d7</button>`).join('')}</div></div>
     <div class="row"><span>voice</span><select id="tVoice" aria-label="voice"></select></div>
+    <button class="toc" data-t="hear">hear a sample<div class="sub" id="tVoiceTip"></div></button>
     <div class="row"><span>sleep timer</span><div class="seg" id="tSleep"><button data-sl="0">off</button><button data-sl="15">15m</button><button data-sl="30">30m</button><button data-sl="end">chapter</button></div></div>
+    <div class="row"><span>clean reading</span><div class="seg" id="tClean"><button data-cl="on">on</button><button data-cl="off">off</button></div></div>
+    <div class="row"><span>keep screen on</span><div class="seg" id="tAwake"><button data-aw="on">on</button><button data-aw="off">off</button></div></div>
     <div class="row"><span>keep going in other apps</span><div class="seg" id="tBg"><button data-bg="on">on</button><button data-bg="off">off</button></div></div>
-    <p class="mnote">reads from the top of your page and turns pages for you. turn a page yourself and it carries on from there. it uses your phone's voices (better ones: settings \u2192 accessibility \u2192 spoken content \u2192 voices), and works while the screen is on.</p></div>`;
-  const sel = body.querySelector('#tVoice');
-  const fill = () => { const vs = ttsVoices(), cur = ttsVoice(); sel.replaceChildren(); vs.forEach(v => sel.append(new Option(v.name + (v.lang ? ' (' + v.lang + ')' : ''), v.voiceURI))); if (cur) sel.value = cur.voiceURI; if (!vs.length) sel.append(new Option('default voice', '')); };
+    <button class="toc" data-t="lm">listening mode<div class="sub">a dark screen with big controls</div></button>
+    <p class="mnote">reads from the top of your page and turns pages for you. clean reading skips footnote numbers and front or back matter, reads "Chapter XVI" as a number, and pauses between paragraphs. turn a page yourself and it carries on from there.</p></div>`;
+  const sel = body.querySelector('#tVoice'), tip = body.querySelector('#tVoiceTip');
+  const fill = () => {
+    const vs = ttsVoices().filter(v => !NOVELTY.test(v.name) || v.voiceURI === S.ttsVoice).sort((a, b) => voiceQ(b) - voiceQ(a) || a.name.localeCompare(b.name)), cur = ttsVoice();
+    sel.replaceChildren();
+    [[3, 'premium'], [2, 'enhanced'], [1, 'standard']].forEach(([q, lab]) => {
+      const g = vs.filter(v => voiceQ(v) === q); if (!g.length) return;
+      const og = document.createElement('optgroup'); og.label = lab;
+      g.forEach(v => og.append(new Option(v.name.replace(/\s*\((premium|enhanced)\)/i, '') + ' \u00b7 ' + v.lang, v.voiceURI))); sel.append(og);
+    });
+    if (!vs.length) sel.append(new Option('default voice', ''));
+    if (cur) sel.value = cur.voiceURI;
+    tip.textContent = vs.some(v => voiceQ(v) >= 2) ? 'tap to hear the selected voice' : 'only standard voices found. for much better ones: Settings \u2192 Accessibility \u2192 Spoken Content \u2192 Voices.';
+  };
   fill(); if (synth) synth.onvoiceschanged = fill;
   sel.onchange = () => { S.ttsVoice = sel.value; saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); };
   body.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.t === 'play') ttsToggle(); else if (b.dataset.t === 'prev') ttsStep(-1); else if (b.dataset.t === 'next') ttsStep(1);
+    const c = b.dataset.t;
+    if (c === 'hear') ttsHear(); else if (c === 'lm'){ closeSheet(); openLM(); } else if (c) ttsCmd(c);
+    else if (b.dataset.rate) ttsSetRate(Number(b.dataset.rate));
+    else if (b.dataset.sl !== undefined) ttsSetSleep(b.dataset.sl);
     else if (b.dataset.bg){ S.ttsBg = b.dataset.bg; saveSettings(); if (S.ttsBg === 'off') kaStop(); else if (TT.on && !TT.paused) kaStart(); }
-    else if (b.dataset.rate){ S.ttsRate = Number(b.dataset.rate); saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); }
-    else if (b.dataset.sl !== undefined){
-      const v = b.dataset.sl; TT.sleepEnd = v === 'end'; TT.sleepMin = Number(v) || 0; TT.sleepAt = TT.sleepMin ? Date.now() + TT.sleepMin * 60000 : 0;
-    }
+    else if (b.dataset.cl){ S.ttsClean = b.dataset.cl; saveSettings(); }
+    else if (b.dataset.aw){ S.ttsAwake = b.dataset.aw; saveSettings(); if (S.ttsAwake === 'off' && $('#lm').hidden) wakeOff(); else if (TT.on && !TT.paused) wakeOn(); }
     ttsRefresh();
   };
   ttsRefresh();
 }
+const lmIcons = {chapPrev: mIc.prev, paraPrev: tIc.pp, paraNext: tIc.pn, chapNext: mIc.next};
+Object.entries(lmIcons).forEach(([k, v]) => { const b = document.querySelector('[data-lm=' + k + ']'); if (b) b.innerHTML = v; });
+document.querySelector('#lm').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.lm) ttsCmd(b.dataset.lm); });
+$('#lmX').onclick = closeLM;
+$('#lmRate').onclick = () => { const r = Number(S.ttsRate) || 1, i = RATES.indexOf(r); ttsSetRate(RATES[(i + 1) % RATES.length]); };
+$('#lmSleep').onclick = () => { const cur = TT.sleepEnd ? 'end' : TT.sleepAt ? String(TT.sleepMin) : '0'; ttsSetSleep(SLEEPS[(SLEEPS.indexOf(cur) + 1) % SLEEPS.length]); };
 $('#ttsBtn').onclick = e => { e.stopPropagation(); ttsUnlock(); openSheet('listen'); };
 
 /* =============== bookmarks + highlights =============== */
