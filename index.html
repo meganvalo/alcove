@@ -2248,12 +2248,16 @@ $('#narFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''
    to the audio at that moment (and the fixes apply from there on). Everything stays on this device. */
 const NA = {on: false, au: null, url: null, art: null, id: null, ready: false, loading: null, missing: false, G: null, pts: null,
   cum: null, cumFor: null, cumTot: 1, timer: 0, shown: '', lastSave: 0, tickBusy: false, q: Promise.resolve(), pairs: 0, units: 0};
-const naW = s => s.text.length + (s.pause || 0) / 70;
+/* v2 timing: letters, plus a short beat for each comma/colon/dash and for the gap between sentences, plus paragraph pauses */
+const naW = s => s.text.length + 2 * (s.text.match(/[,;:\u2014]/g) || []).length + 6 + (s.pause || 0) / 70;
 const naFmt = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 const naHas = () => !!(R.kind === 'epub' && R.meta && R.meta.nar);
 const naUsable = () => naHas() && R.meta.nar.use !== false;
 const rateNow = () => Number(naUsable() ? S.naRate : S.ttsRate) || 1;
 const naEsc = t => String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+const naLag = () => (R.meta && R.meta.nar && R.meta.nar.lag) || 0;
+const naG2T = g => naG2T0(g) + naLag();
+const naT2G = t => naT2G0(t - naLag());
 const naRun = fn => { const p = NA.q.then(fn).catch(e => console.error(e)); NA.q = p; return p; };
 
 /* ---- chapters: which part of the book is which part of the audio ---- */
@@ -2344,13 +2348,13 @@ function naBuild(){
   }
   NA.G = G; NA.pts = out; NA.pairs = pairs.length; NA.units = units.filter(naCand).length;
 }
-function naG2T(g){
+function naG2T0(g){
   const P = NA.pts; if (!P || !P.length) return 0;
   if (g <= P[0].g) return P[0].t; if (g >= P[P.length - 1].g) return P[P.length - 1].t;
   let lo = 0, hi = P.length - 1; while (hi - lo > 1){ const mid = (lo + hi) >> 1; if (P[mid].g <= g) lo = mid; else hi = mid; }
   const a = P[lo], b = P[hi]; return b.g === a.g ? a.t : a.t + (g - a.g) * (b.t - a.t) / (b.g - a.g);
 }
-function naT2G(t){
+function naT2G0(t){
   const P = NA.pts; if (!P || !P.length) return 0;
   if (t <= P[0].t) return P[0].g; if (t >= P[P.length - 1].t) return P[P.length - 1].g;
   let lo = 0, hi = P.length - 1; while (hi - lo > 1){ const mid = (lo + hi) >> 1; if (P[mid].t <= t) lo = mid; else hi = mid; }
@@ -2387,7 +2391,9 @@ async function naLoad(){
   NA.loading = (async () => {
     const blob = await dbGet('files', 'au:' + meta.id).catch(() => null);
     if (!blob || !R.meta || R.meta.id !== meta.id){ NA.missing = !blob; return false; }
-    NA.missing = false; naBuild();
+    NA.missing = false;
+    if ((meta.nar.v || 1) < 2){ toast('improving the sync…', true); meta.nar.w = await naWeights(); meta.nar.anchors = []; meta.nar.v = 2; await dbPut('books', meta); hideToast(); }
+    naBuild();
     const au = NA.au || (NA.au = new Audio());
     au.preload = 'metadata'; try { au.preservesPitch = true; au.webkitPreservesPitch = true; } catch (e) {}
     if (NA.url){ try { URL.revokeObjectURL(NA.url); } catch (e) {} }
@@ -2551,12 +2557,12 @@ async function naAttach(f){
     let dur = info.dur > 0 ? info.dur : await naDur(f);
     if (!(dur > 0)){ toast("couldn't read that audio file"); return; }
     const old = m.nar && m.nar.name === f.name && m.nar.size === f.size ? m.nar : null;
-    const w = (old && old.w && old.w.length === R.book.spine.length) ? old.w : await naWeights((i, n) => toast('matching chapters… ' + i + '/' + n, true));
+    const w = (old && old.v >= 2 && old.w && old.w.length === R.book.spine.length) ? old.w : await naWeights((i, n) => toast('matching chapters… ' + i + '/' + n, true));
     toast('saving the audiobook…', true);
     const type = /\.(m4b|m4a|mp4|aac)$/i.test(f.name) ? 'audio/mp4' : /\.mp3$/i.test(f.name) ? 'audio/mpeg' : (f.type || 'audio/mpeg');
     await dbPut('files', f.slice(0, f.size, type), 'au:' + m.id);
     naClose();
-    m.nar = {v: 1, name: f.name, size: f.size, dur, ch: (info.chapters || []).map(c => ({t: Math.round(c.t * 100) / 100, title: String(c.title || '')})), w,
+    m.nar = {v: 2, lag: old ? old.lag || 0 : 0, name: f.name, size: f.size, dur, ch: (info.chapters || []).map(c => ({t: Math.round(c.t * 100) / 100, title: String(c.title || '')})), w,
       anchors: old ? old.anchors || [] : [], use: true, t: old ? old.t || 0 : 0, tAt: Date.now()};
     await dbPut('books', m);
     await naLoad();
@@ -2578,7 +2584,7 @@ function naNudge(d){
     if (!NA.ready || !NA.au) return;
     const t = NA.au.currentTime, loc = await naLocate(naT2G(t)); if (!loc) return;
     const k = Math.max(0, Math.min(TT.sents.length - 1, loc.si + d));
-    naAnchor(naSentG(loc.ci, k), t); NA.shown = '';
+    naAnchor(naSentG(loc.ci, k), t - naLag()); NA.shown = '';
     if (NA.on) await naSync(true);
     refreshNaBox();
   });
@@ -2594,8 +2600,13 @@ function naAct(a){
   else if (a === 'use1' || a === 'use0'){ ttsStop(); R.meta.nar.use = a === 'use1'; dbPut('books', R.meta).catch(() => {}); refreshNaBox(); }
   else if (a === 'remove') naRemove();
   else if (a === 'clear'){ R.meta.nar.anchors = []; if (NA.ready) naBuild(); dbPut('books', R.meta).catch(() => {}); NA.shown = ''; naKick(); refreshNaBox(); }
+  else if (a === 'lag-' || a === 'lag+' || a === 'lag0'){
+    const n = R.meta.nar; n.lag = a === 'lag0' ? 0 : Math.max(-10, Math.min(10, Math.round(((n.lag || 0) + (a === 'lag+' ? .5 : -.5)) * 10) / 10));
+    dbPut('books', R.meta).catch(() => {}); NA.shown = ''; naKick(); refreshNaBox();
+  }
   else if (a === 'm5') naNudge(-5); else if (a === 'm1') naNudge(-1); else if (a === 'p1') naNudge(1); else if (a === 'p5') naNudge(5);
 }
+const naLagTxt = () => { const l = naLag(); return l ? (l > 0 ? 'later ' : 'earlier ') + Math.abs(l).toFixed(1) + 's' : 'on time'; };
 function refreshNaBox(){
   const box = document.querySelector('#naBox'); if (!box) return;
   if (!naHas() && R.kind !== 'epub'){ box.innerHTML = ''; }
@@ -2606,7 +2617,8 @@ function refreshNaBox(){
     box.innerHTML = `<div class="row"><span>read with</span><div class="seg" id="naUse"><button data-na="use1">audiobook</button><button data-na="use0">device voice</button></div></div>
       <p class="mnote">${naEsc(n.name)} · ${naFmt(n.dur)}${NA.ready ? ' · ' + (NA.pairs >= 2 ? NA.pairs + ' of ' + NA.units + ' chapters matched' : 'no chapters, follows by length') : ''}${NA.missing ? ' · the file is not on this device' : ''}</p>
       <div class="row na"><span>move highlight</span><div class="seg"><button data-na="m5" aria-label="back 5 sentences">« 5</button><button data-na="m1" aria-label="back 1 sentence">‹ 1</button><button data-na="p1" aria-label="forward 1 sentence">1 ›</button><button data-na="p5" aria-label="forward 5 sentences">5 »</button></div></div>
-      <p class="mnote">the highlight is an estimate from the chapter's length. if it runs ahead of or behind the voice, nudge it while it plays and it stays fixed from there on.</p>
+      <div class="row na"><span>highlight timing</span><div class="seg"><button data-na="lag-" aria-label="run the highlight earlier">earlier</button><button data-na="lag0" id="naLag">${naLagTxt()}</button><button data-na="lag+" aria-label="run the highlight later">later</button></div></div>
+      <p class="mnote">the highlight is an estimate from the chapter's length. if the whole book runs a little early or late, use highlight timing (later holds the highlight back). if it drifts in one spot, nudge it while it plays and it stays fixed from there on.</p>
       ${fx ? `<button class="toc" data-na="clear">reset ${fx} sync fix${fx > 1 ? 'es' : ''}</button>` : ''}
       <button class="toc" data-na="add">replace audiobook</button><button class="toc bad" data-na="remove">remove audiobook</button>`;
     box.querySelectorAll('#naUse button').forEach(b => b.classList.toggle('on', (b.dataset.na === 'use1') === naUsable()));
