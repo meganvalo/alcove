@@ -309,6 +309,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
   <div id="bkFoot"><button id="bkBtn">backup &amp; restore</button><div id="bkNote"></div></div>
   <input id="bkFile" type="file" hidden>
   <input id="musicFile" type="file" accept="audio/*,.mp3,.m4a" multiple hidden>
+  <input id="narFile" type="file" hidden>
   <input id="file" type="file" accept=".epub,.pdf,application/epub+zip,application/pdf" multiple hidden>
 </div>
 
@@ -342,6 +343,122 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 <div id="toast"></div>
 <div id="lb" hidden><button id="lbClose">done</button><div id="lbWrap"><img id="lbImg" alt=""></div></div>
 
+<script>
+/* m4b.js: a small MP4/M4B metadata reader. Reads only the moov box (plus chapter text samples),
+   so even a 1 GB audiobook is parsed in milliseconds. Returns {title, author, dur, cover, chapters:[{t, title}]}. */
+(function (g) {
+const u4 = (d, o) => String.fromCharCode(d.getUint8(o), d.getUint8(o + 1), d.getUint8(o + 2), d.getUint8(o + 3));
+function kids(d, s, e) {
+  const out = [];
+  while (s + 8 <= e) {
+    let z = d.getUint32(s), hl = 8;
+    if (z === 1) { z = Number(d.getBigUint64(s + 8)); hl = 16; } else if (z === 0) z = e - s;
+    if (z < hl) break;
+    out.push({ t: u4(d, s + 4), s: s + hl, e: Math.min(s + z, e) });
+    s += z;
+  }
+  return out;
+}
+const find = (d, b, t) => b && kids(d, b.s, b.e).find(k => k.t === t);
+const path = (d, b, ...ts) => { for (const t of ts) b = find(d, b, t); return b; };
+const dec = (buf, s, e, enc) => new TextDecoder(enc || 'utf-8').decode(new Uint8Array(buf, s, e - s));
+
+async function parseM4B(file) {
+  let pos = 0, moov = null;
+  while (pos + 8 <= file.size) {
+    const h = new DataView(await file.slice(pos, pos + 16).arrayBuffer());
+    let z = h.getUint32(0), hl = 8;
+    const t = u4(h, 4);
+    if (z === 1 && h.byteLength >= 16) { z = Number(h.getBigUint64(8)); hl = 16; } else if (z === 0) z = file.size - pos;
+    if (t === 'moov') { moov = await file.slice(pos + hl, pos + z).arrayBuffer(); break; }
+    if (z < 8) break;
+    pos += z;
+  }
+  if (!moov) throw new Error('not an mp4 file');
+  const d = new DataView(moov), root = { s: 0, e: moov.byteLength }, out = { chapters: [] };
+
+  const mv = find(d, root, 'mvhd');
+  if (mv) {
+    const v = d.getUint8(mv.s), ts = d.getUint32(mv.s + (v ? 20 : 12));
+    out.dur = (v ? Number(d.getBigUint64(mv.s + 24)) : d.getUint32(mv.s + 16)) / ts;
+  }
+
+  // tags and cover art
+  const meta = path(d, root, 'udta', 'meta') || find(d, root, 'meta');
+  const il = meta && kids(d, meta.s + 4, meta.e).find(k => k.t === 'ilst');
+  const tag = {};
+  if (il) for (const it of kids(d, il.s, il.e)) {
+    const dt = find(d, it, 'data');
+    if (!dt) continue;
+    const fl = d.getUint32(dt.s) & 0xffffff;
+    if (it.t === 'covr') { if (!out.cover) out.cover = new Blob([moov.slice(dt.s + 8, dt.e)], { type: fl === 14 ? 'image/png' : 'image/jpeg' }); }
+    else if (fl === 1) tag[it.t] = dec(moov, dt.s + 8, dt.e);
+  }
+  out.title = tag['\u00a9nam'] || tag['\u00a9alb'];
+  out.author = tag['\u00a9ART'] || tag['aART'] || tag['\u00a9wrt'];
+
+  // chapters, style 1: Nero "chpl" atom
+  const ch = path(d, root, 'udta', 'chpl');
+  if (ch) {
+    let p = ch.s + (d.getUint8(ch.s) ? 8 : 4);
+    const n = d.getUint8(p++);
+    for (let i = 0; i < n && p + 9 <= ch.e; i++) {
+      const t = Number(d.getBigUint64(p)) / 1e7; p += 8;
+      const l = d.getUint8(p++);
+      out.chapters.push({ t, title: dec(moov, p, p + l) }); p += l;
+    }
+  }
+
+  // chapters, style 2: QuickTime chapter track (tref/chap points at a text track)
+  if (!out.chapters.length) {
+    const traks = kids(d, root.s, root.e).filter(k => k.t === 'trak');
+    for (const tr of traks) {
+      const cp = path(d, tr, 'tref', 'chap');
+      if (!cp) continue;
+      const id = d.getUint32(cp.s);
+      const tg = traks.find(k => { const h = find(d, k, 'tkhd'); return h && d.getUint32(h.s + (d.getUint8(h.s) ? 20 : 12)) === id; });
+      if (!tg) continue;
+      const mh = path(d, tg, 'mdia', 'mdhd'), st = path(d, tg, 'mdia', 'minf', 'stbl');
+      if (!mh || !st) continue;
+      const ts = d.getUint32(mh.s + (d.getUint8(mh.s) ? 20 : 12));
+      const stts = find(d, st, 'stts'), stsz = find(d, st, 'stsz'), stsc = find(d, st, 'stsc');
+      const co = find(d, st, 'stco') || find(d, st, 'co64');
+      if (!stts || !stsz || !stsc || !co) continue;
+      const times = []; let acc = 0, p = stts.s + 8;
+      for (let i = 0, n = d.getUint32(stts.s + 4); i < n; i++, p += 8) {
+        const c = d.getUint32(p), dl = d.getUint32(p + 4);
+        for (let k = 0; k < c; k++) { times.push(acc); acc += dl; }
+      }
+      const fixed = d.getUint32(stsz.s + 4), N = d.getUint32(stsz.s + 8), sizes = [];
+      for (let i = 0; i < N; i++) sizes.push(fixed || d.getUint32(stsz.s + 12 + i * 4));
+      const runs = []; p = stsc.s + 8;
+      for (let i = 0, n = d.getUint32(stsc.s + 4); i < n; i++, p += 12) runs.push({ first: d.getUint32(p), per: d.getUint32(p + 4) });
+      const nc = d.getUint32(co.s + 4), big = co.t === 'co64', samples = [];
+      let r = 0, si = 0;
+      for (let ci = 0; ci < nc; ci++) {
+        while (r + 1 < runs.length && runs[r + 1].first <= ci + 1) r++;
+        let off = big ? Number(d.getBigUint64(co.s + 8 + ci * 8)) : d.getUint32(co.s + 8 + ci * 4);
+        for (let k = 0; k < runs[r].per && si < N; k++, si++) { samples.push({ off, size: sizes[si] }); off += sizes[si]; }
+      }
+      const parts = await Promise.all(samples.map(async s => new Uint8Array(await file.slice(s.off, s.off + s.size).arrayBuffer())));
+      parts.forEach((u, i) => {
+        if (u.length < 2) return;
+        const b = u.subarray(2, 2 + ((u[0] << 8) | u[1]));
+        const txt = b[0] === 0xfe && b[1] === 0xff ? new TextDecoder('utf-16be').decode(b.subarray(2))
+          : b[0] === 0xff && b[1] === 0xfe ? new TextDecoder('utf-16le').decode(b.subarray(2))
+          : new TextDecoder().decode(b);
+        out.chapters.push({ t: times[i] / ts, title: txt.trim() });
+      });
+      break;
+    }
+  }
+  out.chapters.sort((a, b) => a.t - b.t);
+  out.chapters.forEach((c, i) => { if (!c.title) c.title = 'Chapter ' + (i + 1); });
+  return out;
+}
+g.parseM4B = parseM4B;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
 <script>
 (() => {
 'use strict';
@@ -810,7 +927,7 @@ function renderSide(){
     row('backup & restore', '', () => { closeSide(); openSheet('backup'); }, false));
 }
 async function delBook(id){
-  await dbDel('books', id); await dbDel('files', id);
+  await dbDel('books', id); await dbDel('files', id); await dbDel('files', 'au:' + id).catch(() => {});
   try { localStorage.removeItem('alcove.pos.' + id); if (localStorage.getItem('alcove.last') === id) localStorage.removeItem('alcove.last'); } catch (e) {}
 }
 async function addFiles(files){
@@ -909,6 +1026,7 @@ async function openBook(id){
     meta.opened = Date.now(); dbPut('books', meta);
     try { localStorage.setItem('alcove.last', id); } catch (e) {}
     hideToast();
+    if (meta.nar) naLoad().then(refreshNaBox);
   } catch (e) {
     console.error(e);
     try { pdfClose(); } catch (e2) {}
@@ -919,7 +1037,7 @@ async function openBook(id){
 }
 async function closeBook(fromPop){
   flushSave();
-  ttsStop(); $('#lm').hidden = true; wakeOff();
+  ttsStop(); naClose(); $('#lm').hidden = true; wakeOff();
   pbRestore(); saveSettings();
   closeSheet(true);
   closeLightbox();
@@ -1926,6 +2044,7 @@ function ttsUnlock(){
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch (e) {}
 }
 async function ttsStart(){
+  if (naUsable()) return naStart();
   if (!synth){ toast("this browser can't read aloud"); return; }
   ttsUnlock();
   let ci, off = null;
@@ -1933,15 +2052,16 @@ async function ttsStart(){
   TT.on = true; TT.paused = false; TT.sleepAt = TT.sleepAt || 0; kaStart();
   await ttsLoad(ci, off, R.frac); ttsRefresh(); ttsSpeak(true);
 }
-function ttsPause(){ kaStop(); TT.paused = true; TT.tok++; try { synth.cancel(); } catch (e) {} ttsRefresh(); }
-function ttsStop(){ kaStop(); TT.on = false; TT.paused = true; TT.tok++; TT.sleepAt = 0; TT.sleepEnd = false; try { synth && synth.cancel(); } catch (e) {} ttsClear(); ttsRefresh(); }
-function ttsToggle(){ if (!TT.on) ttsStart(); else if (TT.paused){ TT.paused = false; kaStart(); ttsSpeak(true); ttsRefresh(); } else ttsPause(); }
+function ttsPause(){ if (NA.on){ naPause(); return; } kaStop(); TT.paused = true; TT.tok++; try { synth.cancel(); } catch (e) {} ttsRefresh(); }
+function ttsStop(){ naHalt(); kaStop(); TT.on = false; TT.paused = true; TT.tok++; TT.sleepAt = 0; TT.sleepEnd = false; try { synth && synth.cancel(); } catch (e) {} ttsClear(); ttsRefresh(); }
+function ttsToggle(){ if (NA.on){ naToggle(); return; } if (!TT.on) ttsStart(); else if (TT.paused){ TT.paused = false; kaStart(); ttsSpeak(true); ttsRefresh(); } else ttsPause(); }
 function ttsStep(d){
   if (!TT.on){ ttsStart(); return; }
   TT.si = Math.max(0, Math.min(TT.sents.length, TT.si + d)); TT.paused = false; ttsSpeak(true);
 }
 async function ttsChap(d){
   if (!TT.on){ ttsStart(); return; }
+  if (NA.on) return naChap(d);
   const total = R.kind === 'pdf' ? P.n : R.book.spine.length; let ci = TT.ci;
   if (!(d < 0 && TT.si > 2)) ci = Math.max(0, Math.min(total - 1, ci + d));
   TT.tok++; try { synth.cancel(); } catch (e) {}
@@ -1949,6 +2069,7 @@ async function ttsChap(d){
 }
 function ttsPara(d){
   if (!TT.on){ ttsStart(); return; }
+  if (NA.on) return naPara(d);
   const st = i => i <= 0 || TT.sents[i - 1].pb; let i = TT.si;
   if (d > 0){ i++; while (i < TT.sents.length && !st(i)) i++; if (i >= TT.sents.length){ ttsChap(1); return; } }
   else {
@@ -1961,6 +2082,7 @@ const ttsCps = () => (TT.cps || 14.5) * (Number(S.ttsRate) || 1);
 const ttsSecs = s => s.say.length / ttsCps() + (S.ttsClean !== 'off' && s.pause ? s.pause / 1000 / (Number(S.ttsRate) || 1) : 0);
 async function ttsSkip(sec){
   if (!TT.on){ ttsStart(); return; }
+  if (NA.on) return naSkip(sec);
   const tok0 = TT.tok, playing = !TT.paused;
   if (playing){ TT.tok++; try { synth.cancel(); } catch (e) {} }   /* stop old voice while we move */
   const cur = TT.sents[TT.si];
@@ -1985,8 +2107,10 @@ async function ttsSkip(sec){
   TT.bi = 0;
   if (playing){ TT.paused = false; ttsSpeak(true); } else ttsRefresh();
 }
-function ttsSetRate(r){ S.ttsRate = r; saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); ttsRefresh(); }
-function ttsSetSleep(v){ TT.sleepEnd = v === 'end'; TT.sleepMin = Number(v) || 0; TT.sleepAt = TT.sleepMin ? Date.now() + TT.sleepMin * 60000 : 0; ttsRefresh(); }
+function ttsSetRate(r){
+  if (naUsable()){ S.naRate = r; saveSettings(); try { if (NA.au) NA.au.playbackRate = r; } catch (e) {} naPos(); ttsRefresh(); return; }
+  S.ttsRate = r; saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); ttsRefresh(); }
+function ttsSetSleep(v){ TT.sleepEnd = v === 'end'; TT.sleepCi = TT.ci; TT.sleepMin = Number(v) || 0; TT.sleepAt = TT.sleepMin ? Date.now() + TT.sleepMin * 60000 : 0; ttsRefresh(); }
 function ttsCmd(c){
   if (c === 'play') ttsToggle(); else if (c === 'paraPrev') ttsPara(-1); else if (c === 'paraNext') ttsPara(1);
   else if (c === 'chapPrev') ttsChap(-1); else if (c === 'chapNext') ttsChap(1);
@@ -2010,6 +2134,7 @@ function ttsOnScreen(){
 let recoverT;
 function ttsRecover(){
   clearTimeout(recoverT);
+  if (NA.on){ naResync(); return; }
   if (!(TT.on && !TT.paused && synth)) return;
   recoverT = setTimeout(async () => {
     if (!(TT.on && !TT.paused) || document.hidden) return;
@@ -2030,6 +2155,7 @@ function ttsFromView(){
     if (!TT.on || TT.paused) return;
     if (ttsOnScreen()) return;
     const an = currentAnchor(); if (!an) return;
+    if (NA.on){ naFromView(); return; }
     await ttsLoad(an.i, an.off, 0); ttsSpeak(true);
   }, 500);
 }
@@ -2044,7 +2170,7 @@ const sleepLabel = () => TT.sleepEnd ? 'chapter' : TT.sleepAt ? (TT.sleepMin + '
 function ttsRefresh(){
   const playing = TT.on && !TT.paused;
   const b = $('#ttsBtn'); if (b) b.classList.toggle('on', playing);
-  const rate = Number(S.ttsRate) || 1;
+  const rate = rateNow();
   const lm = $('#lm');
   if (lm && !lm.hidden){
     $('#lmBook').textContent = (R.meta && R.meta.title) || ''; $('#lmChap').textContent = (R.kind === 'pdf' ? 'Page ' + TT.ci : (TT.ci >= 0 && labelFor(TT.ci)) || '') || '';
@@ -2055,7 +2181,7 @@ function ttsRefresh(){
   }
   if (!$('#tNow')) return;
   const sl = TT.sleepAt ? Math.max(1, Math.round((TT.sleepAt - Date.now()) / 60000)) : 0;
-  $('#tNow').textContent = (TT.on ? (TT.paused ? 'paused' : 'reading aloud') : 'ready') + (TT.sleepEnd ? ' \u00b7 stops at chapter end' : sl ? ' \u00b7 stops in ~' + sl + ' min' : '');
+  $('#tNow').textContent = (NA.on && NA.au ? (TT.paused ? 'paused' : 'narrating') + ' \u00b7 ' + naFmt(NA.au.currentTime) + ' of ' + naFmt(NA.au.duration || R.meta.nar.dur) : TT.on ? (TT.paused ? 'paused' : 'reading aloud') : 'ready') + (TT.sleepEnd ? ' \u00b7 stops at chapter end' : sl ? ' \u00b7 stops in ~' + sl + ' min' : '');
   $('[data-t=play]').innerHTML = playing ? mIc.pause : mIc.play;
   const on = (sel, f) => document.querySelectorAll(sel).forEach(x => x.classList.toggle('on', f(x)));
   on('#tBg button', x => x.dataset.bg === (S.ttsBg === 'off' ? 'off' : 'on'));
@@ -2067,15 +2193,16 @@ function ttsRefresh(){
 function buildListen(body){
   body.innerHTML = `<div class="music"><div class="mnow" id="tNow"></div>
     <div class="mctl"><button data-t="chapPrev" aria-label="previous chapter">${mIc.prev}</button><button data-t="paraPrev" aria-label="previous paragraph">${tIc.pp}</button><button data-t="play" class="big" aria-label="play or pause"></button><button data-t="paraNext" aria-label="next paragraph">${tIc.pn}</button><button data-t="chapNext" aria-label="next chapter">${mIc.next}</button></div>
+    <div id="naBox"></div>
     <div class="row"><span>speed</span><div class="seg" id="tRate">${RATES.map(r => `<button data-rate="${r}">${r}\u00d7</button>`).join('')}</div></div>
-    <div class="row"><span>voice</span><select id="tVoice" aria-label="voice"></select></div>
-    <button class="toc" data-t="hear">hear a sample<div class="sub" id="tVoiceTip"></div></button>
+    <div class="row vo"><span>voice</span><select id="tVoice" aria-label="voice"></select></div>
+    <button class="toc vo" data-t="hear">hear a sample<div class="sub" id="tVoiceTip"></div></button>
     <div class="row"><span>sleep timer</span><div class="seg" id="tSleep"><button data-sl="0">off</button><button data-sl="15">15m</button><button data-sl="30">30m</button><button data-sl="end">chapter</button></div></div>
-    <div class="row"><span>clean reading</span><div class="seg" id="tClean"><button data-cl="on">on</button><button data-cl="off">off</button></div></div>
+    <div class="row vo"><span>clean reading</span><div class="seg" id="tClean"><button data-cl="on">on</button><button data-cl="off">off</button></div></div>
     <div class="row"><span>keep screen on</span><div class="seg" id="tAwake"><button data-aw="on">on</button><button data-aw="off">off</button></div></div>
     <div class="row"><span>keep going in other apps</span><div class="seg" id="tBg"><button data-bg="on">on</button><button data-bg="off">off</button></div></div>
     <button class="toc" data-t="lm">listening mode<div class="sub">a dark screen with big controls</div></button>
-    <p class="mnote">reads from the top of your page and turns pages for you. clean reading skips footnote numbers and front or back matter, reads "Chapter XVI" as a number, and pauses between paragraphs. turn a page yourself and it carries on from there.</p></div>`;
+    <p class="mnote vo">reads from the top of your page and turns pages for you. clean reading skips footnote numbers and front or back matter, reads "Chapter XVI" as a number, and pauses between paragraphs. turn a page yourself and it carries on from there.</p></div>`;
   const sel = body.querySelector('#tVoice'), tip = body.querySelector('#tVoiceTip');
   const fill = () => {
     const vs = ttsVoices().filter(v => !NOVELTY.test(v.name) || v.voiceURI === S.ttsVoice).sort((a, b) => voiceQ(b) - voiceQ(a) || a.name.localeCompare(b.name)), cur = ttsVoice();
@@ -2093,6 +2220,7 @@ function buildListen(body){
   sel.onchange = () => { S.ttsVoice = sel.value; saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); };
   body.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.na){ naAct(b.dataset.na); return; }
     const c = b.dataset.t;
     if (c === 'hear') ttsHear(); else if (c === 'lm'){ closeSheet(); openLM(); } else if (c) ttsCmd(c);
     else if (b.dataset.rate) ttsSetRate(Number(b.dataset.rate));
@@ -2102,15 +2230,390 @@ function buildListen(body){
     else if (b.dataset.aw){ S.ttsAwake = b.dataset.aw; saveSettings(); if (S.ttsAwake === 'off' && $('#lm').hidden) wakeOff(); else if (TT.on && !TT.paused) wakeOn(); }
     ttsRefresh();
   };
-  ttsRefresh();
+  refreshNaBox();
+  if (naHas()) naLoad().then(refreshNaBox);
 }
 const lmIcons = {chapPrev: mIc.prev, back10: tIc.b10, fwd10: tIc.f10, chapNext: mIc.next};
 Object.entries(lmIcons).forEach(([k, v]) => { const b = document.querySelector('[data-lm=' + k + ']'); if (b) b.innerHTML = v; });
 document.querySelector('#lm').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.lm) ttsCmd(b.dataset.lm); });
 $('#lmX').onclick = closeLM;
-$('#lmRate').onclick = () => { const r = Number(S.ttsRate) || 1, i = RATES.indexOf(r); ttsSetRate(RATES[(i + 1) % RATES.length]); };
+$('#lmRate').onclick = () => { const r = rateNow(), i = RATES.indexOf(r); ttsSetRate(RATES[(i + 1) % RATES.length]); };
 $('#lmSleep').onclick = () => { const cur = TT.sleepEnd ? 'end' : TT.sleepAt ? String(TT.sleepMin) : '0'; ttsSetSleep(SLEEPS[(SLEEPS.indexOf(cur) + 1) % SLEEPS.length]); };
-$('#ttsBtn').onclick = e => { e.stopPropagation(); ttsUnlock(); openSheet('listen'); };
+$('#ttsBtn').onclick = e => { e.stopPropagation(); ttsUnlock(); naPrime(); openSheet('listen'); };
+$('#narFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) naAttach(f); };
+
+/* =============== narration (an audiobook that the text follows) =============== */
+/* Attach an .m4b / .m4a / .mp3 to an EPUB. The audio file's chapters are matched to the book's chapters; inside a chapter the
+   time is spread over the text by length. That is an estimate, not a forced alignment, so "move highlight" fixes pin the text
+   to the audio at that moment (and the fixes apply from there on). Everything stays on this device. */
+const NA = {on: false, au: null, url: null, art: null, id: null, ready: false, loading: null, missing: false, G: null, pts: null,
+  cum: null, cumFor: null, cumTot: 1, timer: 0, shown: '', lastSave: 0, tickBusy: false, q: Promise.resolve(), pairs: 0, units: 0};
+const naW = s => s.text.length + (s.pause || 0) / 70;
+const naFmt = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const naHas = () => !!(R.kind === 'epub' && R.meta && R.meta.nar);
+const naUsable = () => naHas() && R.meta.nar.use !== false;
+const rateNow = () => Number(naUsable() ? S.naRate : S.ttsRate) || 1;
+const naEsc = t => String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+const naRun = fn => { const p = NA.q.then(fn).catch(e => console.error(e)); NA.q = p; return p; };
+
+/* ---- chapters: which part of the book is which part of the audio ---- */
+async function naWeights(prog){
+  const n = R.book.spine.length, w = [];
+  for (let i = 0; i < n; i++){
+    let t = 0; try { splitSent(await chText(i)).forEach(s => { t += naW(s); }); } catch (e) {}
+    w.push(Math.round(t * 10) / 10); if (prog) prog(i + 1, n);
+  }
+  return w;
+}
+function naUnits(w){
+  const bk = R.book, n = bk.spine.length, toc = bk.toc || [];
+  let st = [...new Set(toc.map(e => e.idx).filter(i => i >= 0 && i < n))].sort((a, b) => a - b);
+  if (st.length < Math.max(2, w.filter(x => x >= 120).length * .5)) st = w.map((x, i) => i);   /* a thin contents list: use every file */
+  return st.map((s, k) => {
+    const e = k + 1 < st.length ? st[k + 1] : n; let sum = 0; for (let i = s; i < e; i++) sum += w[i] || 0;
+    const ent = toc.find(x => x.idx === s);
+    return {s, e, w: sum, label: (ent && ent.label) || labelFor(s) || ''};
+  });
+}
+const naCand = u => u.w >= 120 && !SKIP_CH.test((u.label || '').trim());
+const NUMWORDS = 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty'.split(' ');
+function naNum(t){
+  t = String(t || '').toLowerCase().trim(); let m;
+  if ((m = /^\W*(?:chapter|part|book|section)?\W*(\d{1,3})\b/.exec(t))) return +m[1];
+  if ((m = /^\W*(?:chapter|part|book|section)\W+([ivxlcdm]+)\b/.exec(t)) || (m = /^\W*([ivxlcdm]+)\W*$/.exec(t))){ const v = romanToInt(m[1]); if (v) return v; }
+  if ((m = /^\W*(?:chapter|part|book|section)\W+([a-z]+)\b/.exec(t))){ const k = NUMWORDS.indexOf(m[1]); if (k >= 0) return k + 1; }
+  return 0;
+}
+const naNorm = t => String(t || '').toLowerCase().replace(/\b(chapter|part|book|section)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+function naSim(a, b){
+  const x = naNum(a), y = naNum(b);
+  if (x && y) return x === y ? 1 : -1;
+  const p = naNorm(a), q = naNorm(b);
+  if (!p || !q) return 0;
+  if (p === q) return 1;
+  return (p.length > 3 && q.length > 3 && (p.includes(q) || q.includes(p))) ? .6 : 0;
+}
+/* line the book's chapters up with the audio's chapters: in order, rewarding matching titles/numbers and similar lengths,
+   and letting either side skip things the other doesn't have (credits, copyright page, part titles) */
+function naMatch(units, ch, dur){
+  const U = units.map((u, i) => ({u, i})).filter(x => naCand(x.u));
+  const A = ch.map((c, j) => ({j, d: Math.max(1, (j + 1 < ch.length ? ch[j + 1].t : dur) - c.t), title: c.title}));
+  const n = U.length, m = A.length; if (n < 2 || m < 2) return [];
+  const sE = U.reduce((a, x) => a + x.u.w, 0), sA = A.reduce((a, x) => a + x.d, 0), gap = .35;
+  const sc = (i, j) => {
+    const r = Math.abs(Math.log((U[i].u.w / sE) / (A[j].d / sA))), ts = naSim(U[i].u.label, A[j].title);
+    return Math.max(-.3, 1 - r / 1.2) + (ts > 0 ? 1.5 * ts : ts < 0 ? -.8 : 0);
+  };
+  const S2 = Array.from({length: n + 1}, () => new Float64Array(m + 1)), B = Array.from({length: n + 1}, () => new Uint8Array(m + 1));
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++){
+    let b = S2[i - 1][j - 1] + sc(i - 1, j - 1), k = 0;
+    if (S2[i - 1][j] - gap > b){ b = S2[i - 1][j] - gap; k = 1; }
+    if (S2[i][j - 1] - gap > b){ b = S2[i][j - 1] - gap; k = 2; }
+    S2[i][j] = b; B[i][j] = k;
+  }
+  let bi = n, bj = m, best = S2[n][m];                       /* leading and trailing extras are free */
+  for (let j = 0; j <= m; j++) if (S2[n][j] > best + 1e-9){ best = S2[n][j]; bi = n; bj = j; }
+  for (let i = 0; i <= n; i++) if (S2[i][m] > best + 1e-9){ best = S2[i][m]; bi = i; bj = m; }
+  const pairs = []; let i = bi, j = bj;
+  while (i > 0 && j > 0){
+    const k = B[i][j];
+    if (k === 0){ pairs.push([U[i - 1].i, A[j - 1].j]); i--; j--; } else if (k === 1) i--; else j--;
+  }
+  return pairs.reverse();
+}
+/* the map between the text (cumulative length, "g") and the audio (seconds): a list of points, joined by straight lines */
+function naBuild(){
+  const nar = R.meta.nar, w = nar.w, n = w.length, G = [0];
+  for (let i = 0; i < n; i++) G.push(G[i] + (w[i] || 0));
+  const units = naUnits(w), ch = nar.ch || [], pairs = naMatch(units, ch, nar.dur); let pts = [];
+  if (pairs.length >= 2){
+    pairs.forEach(([u, j]) => pts.push({g: G[units[u].s], t: ch[j].t}));
+    const [u, j] = pairs[pairs.length - 1];
+    pts.push({g: G[units[u].e], t: j + 1 < ch.length ? ch[j + 1].t : nar.dur});
+  } else {
+    const cand = units.filter(naCand), a = cand.length ? cand[0].s : 0, b = cand.length ? cand[cand.length - 1].e : n;
+    pts = [{g: G[a], t: 0}, {g: G[b], t: nar.dur}];
+  }
+  (nar.anchors || []).forEach(a => pts.push({g: a.g, t: a.t, a: 1}));
+  pts.sort((x, y) => x.g - y.g || (x.a || 0) - (y.a || 0));
+  const out = [];
+  for (const p of pts){
+    let skip = false;
+    while (out.length && p.t < out[out.length - 1].t){ if (!p.a && out[out.length - 1].a){ skip = true; break; } out.pop(); }
+    if (!skip) out.push(p);
+  }
+  NA.G = G; NA.pts = out; NA.pairs = pairs.length; NA.units = units.filter(naCand).length;
+}
+function naG2T(g){
+  const P = NA.pts; if (!P || !P.length) return 0;
+  if (g <= P[0].g) return P[0].t; if (g >= P[P.length - 1].g) return P[P.length - 1].t;
+  let lo = 0, hi = P.length - 1; while (hi - lo > 1){ const mid = (lo + hi) >> 1; if (P[mid].g <= g) lo = mid; else hi = mid; }
+  const a = P[lo], b = P[hi]; return b.g === a.g ? a.t : a.t + (g - a.g) * (b.t - a.t) / (b.g - a.g);
+}
+function naT2G(t){
+  const P = NA.pts; if (!P || !P.length) return 0;
+  if (t <= P[0].t) return P[0].g; if (t >= P[P.length - 1].t) return P[P.length - 1].g;
+  let lo = 0, hi = P.length - 1; while (hi - lo > 1){ const mid = (lo + hi) >> 1; if (P[mid].t <= t) lo = mid; else hi = mid; }
+  const a = P[lo], b = P[hi]; return b.t === a.t ? a.g : a.g + (t - a.t) * (b.g - a.g) / (b.t - a.t);
+}
+/* ---- sentences of one chapter, with their running length ---- */
+async function naSents(ci){
+  if (TT.ci !== ci || !TT.sents.length) await ttsLoad(ci, 0, 0);
+  if (NA.cumFor !== TT.sents){ let a = 0; NA.cum = TT.sents.map(s => { const v = a; a += naW(s); return v; }); NA.cumTot = a || 1; NA.cumFor = TT.sents; }
+}
+async function naLocate(g){                                  /* text position (g) -> {chapter, sentence} */
+  const w = R.meta.nar.w, G = NA.G; let lo = 0, hi = w.length - 1;
+  while (lo < hi){ const mid = (lo + hi + 1) >> 1; if (G[mid] <= g) lo = mid; else hi = mid - 1; }
+  let ci = lo; while (ci > 0 && !(w[ci] > 0)) ci--;
+  if (!(w[ci] > 0)){ ci = w.findIndex(x => x > 0); if (ci < 0) return null; }
+  await naSents(ci);
+  const loc = Math.max(0, Math.min(g - G[ci], w[ci])) * (NA.cumTot / w[ci]), c = NA.cum; let a = 0, b = c.length - 1;
+  while (a < b){ const mid = (a + b + 1) >> 1; if (c[mid] <= loc) a = mid; else b = mid - 1; }
+  return {ci, si: Math.max(0, a)};
+}
+async function naTimeAt(ci, off){                            /* chapter + text offset -> seconds */
+  const w = R.meta.nar.w; await naSents(ci);
+  const k = off > 0 ? TT.sents.findIndex(x => x.s >= off - 1) : 0;
+  const loc = k < 0 ? NA.cumTot : (NA.cum[k] || 0);
+  return naG2T(NA.G[ci] + loc * ((w[ci] || 0) / NA.cumTot) + .5);
+}
+const naSentG = (ci, k) => NA.G[ci] + (NA.cum[k] || 0) * (R.meta.nar.w[ci] / NA.cumTot);
+
+/* ---- loading the audio ---- */
+async function naLoad(){
+  const meta = R.meta; if (!naHas()) return false;
+  if (NA.ready && NA.id === meta.id) return true;
+  if (NA.loading) return NA.loading;
+  NA.loading = (async () => {
+    const blob = await dbGet('files', 'au:' + meta.id).catch(() => null);
+    if (!blob || !R.meta || R.meta.id !== meta.id){ NA.missing = !blob; return false; }
+    NA.missing = false; naBuild();
+    const au = NA.au || (NA.au = new Audio());
+    au.preload = 'metadata'; try { au.preservesPitch = true; au.webkitPreservesPitch = true; } catch (e) {}
+    if (NA.url){ try { URL.revokeObjectURL(NA.url); } catch (e) {} }
+    au._p = 0; NA.url = URL.createObjectURL(blob); au.src = NA.url;
+    await new Promise(res => { const d = () => { au.removeEventListener('loadedmetadata', d); au.removeEventListener('error', d); res(); }; au.addEventListener('loadedmetadata', d); au.addEventListener('error', d); setTimeout(d, 8000); });
+    if (au.error) return false;
+    try { au.currentTime = Math.max(0, Math.min(meta.nar.t || 0, (au.duration || meta.nar.dur) - 1)); } catch (e) {}
+    NA.id = meta.id; NA.ready = true; naWire(); return true;
+  })().catch(e => { console.error(e); return false; }).finally(() => { NA.loading = null; });
+  return NA.loading;
+}
+function naWire(){
+  const au = NA.au; if (au._w) return; au._w = 1;
+  au.addEventListener('play', () => { if (NA.on && TT.paused){ TT.paused = false; naTickStart(); if (S.ttsAwake !== 'off') wakeOn(); ttsRefresh(); } });
+  au.addEventListener('pause', () => { if (NA.on && !TT.paused && !au.ended){ TT.paused = true; naTickStop(); naSaveT(true); if ($('#lm').hidden) wakeOff(); ttsRefresh(); } });
+  au.addEventListener('ended', () => { if (NA.on){ TT.paused = true; naTickStop(); naSaveT(true); ttsRefresh(); toast('reached the end'); } });
+  au.addEventListener('seeked', () => { if (NA.on){ naKick(); naPos(); } });
+  au.addEventListener('error', () => { if (NA.on){ TT.paused = true; naTickStop(); ttsRefresh(); toast("couldn't play the audiobook"); } });
+}
+/* iOS only lets an element play if it was started by a tap; do a silent play+pause during the tap so later starts are allowed */
+function naPrime(){
+  const au = NA.au; if (!au || !NA.ready || au._p) return; au._p = 1;
+  try {
+    au.muted = true;
+    const p = au.play();
+    Promise.resolve(p).then(() => { if (!NA.on || TT.paused) au.pause(); }).catch(() => {}).finally(() => { au.muted = false; });
+  } catch (e) { au.muted = false; }
+}
+function naSaveT(force){
+  const m = R.meta; if (!m || !m.nar || !NA.au || NA.id !== m.id) return;
+  NA.lastSave = Date.now(); m.nar.t = NA.au.currentTime; m.nar.tAt = NA.lastSave;
+  if (force) dbPut('books', m).catch(() => {}); else saveMarks();
+}
+function naClose(){
+  naTickStop(); NA.on = false;
+  try { if (NA.au){ NA.au.pause(); NA.au.removeAttribute('src'); NA.au.load(); } } catch (e) {}
+  [NA.url, NA.art].forEach(u => { if (u){ try { URL.revokeObjectURL(u); } catch (e) {} } });
+  Object.assign(NA, {url: null, art: null, id: null, ready: false, loading: null, missing: false, G: null, pts: null, cum: null, cumFor: null, shown: '', q: Promise.resolve()});
+}
+function naHalt(){ if (!NA.on) return; naPause(); NA.on = false; NA.shown = ''; }
+
+/* ---- playing ---- */
+async function naStart(){
+  naPrime();
+  if (!(await naLoad())){ toast(NA.missing ? 'the audiobook file is not on this device. add it again.' : "couldn't open the audiobook"); return; }
+  naPrime();
+  const au = NA.au; NA.on = true; TT.on = true; TT.paused = true;
+  await naRun(async () => {
+    try {                                                    /* carry on where the audio was, unless you have read on to somewhere else */
+      const loc = await naLocate(naT2G(au.currentTime)), v = visibleRange(); let t = au.currentTime;
+      const s = loc && TT.sents[loc.si];
+      if (!(s && v && v.i === loc.ci && s.s >= v.a - 60 && s.s <= v.b)){ const an = currentAnchor(); if (an) t = await naTimeAt(an.i, an.off); }
+      au.currentTime = t;
+    } catch (e) { console.error(e); }
+  });
+  await naPlayNow();
+}
+async function naPlayNow(){
+  const au = NA.au; if (!au) return;
+  NA.on = true; TT.on = true; TT.paused = false; au.muted = false; au.playbackRate = rateNow();
+  naMS(); if (S.ttsAwake !== 'off') wakeOn();
+  try { await au.play(); } catch (e){ TT.paused = true; ttsRefresh(); toast('tap play to start the audiobook'); return; }
+  naTickStart(); naKick(); naPos(); ttsRefresh();
+}
+function naPause(){
+  const au = NA.au; TT.paused = true; try { au && au.pause(); } catch (e) {}
+  naTickStop(); naSaveT(true); if ($('#lm').hidden) wakeOff();
+  try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+  ttsRefresh();
+}
+function naToggle(){ if (!NA.on) return ttsStart(); if (TT.paused) naPlayNow(); else naPause(); }
+function naTickStart(){ naTickStop(); NA.timer = setInterval(naTick, 250); }
+function naTickStop(){ clearInterval(NA.timer); NA.timer = 0; }
+function naTick(){
+  if (!NA.on || TT.paused || !NA.au) return;
+  const now = Date.now();
+  if (TT.sleepAt && now >= TT.sleepAt){ TT.sleepAt = 0; naPause(); toast('sleep timer: paused the audiobook'); return; }
+  if (now - NA.lastSave > 10000) naSaveT();
+  if (now - (NA.lastUi || 0) > 1000 && document.querySelector('#tNow')){ NA.lastUi = now; ttsRefresh(); }
+  if (NA.tickBusy) return; NA.tickBusy = true;
+  naRun(() => naSync()).finally(() => { NA.tickBusy = false; });
+}
+const naKick = () => { if (NA.on) naRun(() => naSync(true)); };
+/* make the text show what the narrator is saying right now */
+async function naSync(force){
+  if (!NA.on || !NA.ready) return;
+  const au = NA.au, loc = await naLocate(naT2G(au.currentTime)); if (!NA.on || !loc) return;
+  if (TT.sleepEnd && !TT.paused){
+    if (!(TT.sleepCi >= 0)) TT.sleepCi = loc.ci;
+    else if (loc.ci !== TT.sleepCi){ TT.sleepEnd = false; TT.sleepCi = -1; au.currentTime = await naTimeAt(loc.ci, 0); naPause(); toast('sleep timer: paused at the end of the chapter'); }
+  }
+  const key = loc.ci + ':' + loc.si; if (key === NA.shown && !force) return;
+  NA.shown = key; TT.ci = loc.ci; TT.si = loc.si;
+  const s = TT.sents[loc.si]; if (!s) return;
+  await ttsEnsure(loc.ci, s.s); if (!NA.on) return;
+  ttsShow(s); actAt = Date.now(); ttsRefresh();
+}
+function naSeek(t){
+  const au = NA.au; if (!au) return;
+  const d = au.duration || R.meta.nar.dur; au.currentTime = Math.max(0, Math.min(d - .2, t)); NA.shown = ''; naKick();
+}
+const naSkip = sec => { if (!NA.au) return; naSeek(NA.au.currentTime + sec); };
+function naSeekSent(k){ return naRun(async () => { naSeek(naG2T(naSentG(TT.ci, k) + .5)); }); }
+function naChap(d){
+  return naRun(async () => {
+    const w = R.meta.nar.w; let ci = TT.ci;
+    if (!(d < 0 && NA.au.currentTime - naG2T(NA.G[ci] + .5) > 4)){          /* going back after a few seconds just restarts the chapter */
+      do ci += d; while (ci >= 0 && ci < w.length && !(w[ci] > 0));
+      if (ci >= w.length){ toast('last chapter'); return; }
+      if (ci < 0) ci = Math.max(0, w.findIndex(x => x > 0));
+    }
+    naSeek(naG2T(NA.G[ci] + .5));
+  });
+}
+function naPara(d){
+  const st = i => i <= 0 || TT.sents[i - 1].pb; let i = TT.si;
+  if (d > 0){ i++; while (i < TT.sents.length && !st(i)) i++; if (i >= TT.sents.length) return naChap(1); }
+  else {
+    if (!st(i)){ while (i > 0 && !st(i)) i--; }
+    else { if (i <= 0) return naChap(-1); i--; while (i > 0 && !st(i)) i--; }
+  }
+  return naSeekSent(Math.max(0, i));
+}
+/* you turned the page while it was playing: carry on from the top of that page */
+function naFromView(){
+  return naRun(async () => {
+    const an = currentAnchor(); if (!an || !NA.on) return;
+    naSeek(await naTimeAt(an.i, an.off));
+  });
+}
+function naResync(){ if (!NA.on) return; NA.shown = ''; naKick(); if (!TT.paused){ naTickStart(); if (S.ttsAwake !== 'off') wakeOn(); } naPos(); }
+function naMS(){
+  try {
+    const ms = navigator.mediaSession, m = R.meta, au = NA.au;
+    if (!NA.art){ const c = anyCover(m); if (c) NA.art = URL.createObjectURL(c); }
+    ms.metadata = new MediaMetadata({title: m.title || 'alcove.', artist: m.author || '', album: 'alcove.', artwork: NA.art ? [{src: NA.art, sizes: '512x512', type: m.coverType || 'image/jpeg'}] : []});
+    ms.playbackState = 'playing';
+    const h = (a, f) => { try { ms.setActionHandler(a, f); } catch (e) {} };
+    h('play', () => { au.play().catch(() => {}); }); h('pause', () => { au.pause(); });
+    h('seekbackward', () => naSkip(-10)); h('seekforward', () => naSkip(10));
+    h('previoustrack', () => naChap(-1)); h('nexttrack', () => naChap(1));
+    h('seekto', e => { if (e && e.seekTime != null) naSeek(e.seekTime); });
+  } catch (e) {}
+}
+function naPos(){
+  try { const au = NA.au, d = au.duration || R.meta.nar.dur; navigator.mediaSession.setPositionState({duration: d, position: Math.min(au.currentTime, d), playbackRate: au.playbackRate || 1}); } catch (e) {}
+}
+
+/* ---- adding, fixing and removing the audiobook ---- */
+const naDur = f => new Promise(res => {
+  const a = new Audio(), u = URL.createObjectURL(f); a.preload = 'metadata';
+  const done = v => { try { URL.revokeObjectURL(u); } catch (e) {} res(v); };
+  a.onloadedmetadata = () => done(isFinite(a.duration) ? a.duration : 0); a.onerror = () => done(0); setTimeout(() => done(0), 15000); a.src = u;
+});
+async function naAttach(f){
+  if (R.kind !== 'epub' || !R.meta || !R.book){ toast('narration works with EPUB books'); return; }
+  ttsStop(); const m = R.meta;
+  try {
+    toast('reading the audiobook…', true);
+    let info = {chapters: []}; try { info = await parseM4B(f); } catch (e) {}
+    let dur = info.dur > 0 ? info.dur : await naDur(f);
+    if (!(dur > 0)){ toast("couldn't read that audio file"); return; }
+    const old = m.nar && m.nar.name === f.name && m.nar.size === f.size ? m.nar : null;
+    const w = (old && old.w && old.w.length === R.book.spine.length) ? old.w : await naWeights((i, n) => toast('matching chapters… ' + i + '/' + n, true));
+    toast('saving the audiobook…', true);
+    const type = /\.(m4b|m4a|mp4|aac)$/i.test(f.name) ? 'audio/mp4' : /\.mp3$/i.test(f.name) ? 'audio/mpeg' : (f.type || 'audio/mpeg');
+    await dbPut('files', f.slice(0, f.size, type), 'au:' + m.id);
+    naClose();
+    m.nar = {v: 1, name: f.name, size: f.size, dur, ch: (info.chapters || []).map(c => ({t: Math.round(c.t * 100) / 100, title: String(c.title || '')})), w,
+      anchors: old ? old.anchors || [] : [], use: true, t: old ? old.t || 0 : 0, tAt: Date.now()};
+    await dbPut('books', m);
+    await naLoad();
+    toast(NA.pairs >= 2 ? `audiobook added. matched ${NA.pairs} of ${NA.units} chapters` : 'audiobook added. no chapters found, so the text follows by length');
+  } catch (e) {
+    console.error(e);
+    toast(e && e.name === 'QuotaExceededError' ? 'not enough space on this device for the audiobook' : "couldn't add that audiobook");
+  }
+  refreshNaBox();
+}
+function naAnchor(g, t){
+  const nar = R.meta.nar; nar.anchors = (nar.anchors || []).filter(a => Math.abs(a.t - t) > 2);
+  nar.anchors.push({g: Math.round(g * 10) / 10, t: Math.round(t * 100) / 100}); nar.anchors = nar.anchors.slice(-200);
+  naBuild(); dbPut('books', R.meta).catch(() => {});
+}
+/* d sentences: -1 means "the highlight is ahead of the narrator, pull it back" */
+function naNudge(d){
+  return naRun(async () => {
+    if (!NA.ready || !NA.au) return;
+    const t = NA.au.currentTime, loc = await naLocate(naT2G(t)); if (!loc) return;
+    const k = Math.max(0, Math.min(TT.sents.length - 1, loc.si + d));
+    naAnchor(naSentG(loc.ci, k), t); NA.shown = '';
+    if (NA.on) await naSync(true);
+    refreshNaBox();
+  });
+}
+async function naRemove(){
+  if (!naHas() || !confirm('Remove the audiobook from this book? The text stays.')) return;
+  ttsStop(); const id = R.meta.id;
+  naClose(); delete R.meta.nar; await dbPut('books', R.meta); await dbDel('files', 'au:' + id).catch(() => {});
+  toast('audiobook removed'); refreshNaBox();
+}
+function naAct(a){
+  if (a === 'add') $('#narFile').click();
+  else if (a === 'use1' || a === 'use0'){ ttsStop(); R.meta.nar.use = a === 'use1'; dbPut('books', R.meta).catch(() => {}); refreshNaBox(); }
+  else if (a === 'remove') naRemove();
+  else if (a === 'clear'){ R.meta.nar.anchors = []; if (NA.ready) naBuild(); dbPut('books', R.meta).catch(() => {}); NA.shown = ''; naKick(); refreshNaBox(); }
+  else if (a === 'm5') naNudge(-5); else if (a === 'm1') naNudge(-1); else if (a === 'p1') naNudge(1); else if (a === 'p5') naNudge(5);
+}
+function refreshNaBox(){
+  const box = document.querySelector('#naBox'); if (!box) return;
+  if (!naHas() && R.kind !== 'epub'){ box.innerHTML = ''; }
+  else if (!naHas()){
+    box.innerHTML = `<button class="toc" data-na="add">add an audiobook<div class="sub">attach the .m4b, .m4a or .mp3 of this book and the text follows the narrator</div></button>`;
+  } else {
+    const n = R.meta.nar, fx = (n.anchors || []).length;
+    box.innerHTML = `<div class="row"><span>read with</span><div class="seg" id="naUse"><button data-na="use1">audiobook</button><button data-na="use0">device voice</button></div></div>
+      <p class="mnote">${naEsc(n.name)} · ${naFmt(n.dur)}${NA.ready ? ' · ' + (NA.pairs >= 2 ? NA.pairs + ' of ' + NA.units + ' chapters matched' : 'no chapters, follows by length') : ''}${NA.missing ? ' · the file is not on this device' : ''}</p>
+      <div class="row na"><span>move highlight</span><div class="seg"><button data-na="m5" aria-label="back 5 sentences">« 5</button><button data-na="m1" aria-label="back 1 sentence">‹ 1</button><button data-na="p1" aria-label="forward 1 sentence">1 ›</button><button data-na="p5" aria-label="forward 5 sentences">5 »</button></div></div>
+      <p class="mnote">the highlight is an estimate from the chapter's length. if it runs ahead of or behind the voice, nudge it while it plays and it stays fixed from there on.</p>
+      ${fx ? `<button class="toc" data-na="clear">reset ${fx} sync fix${fx > 1 ? 'es' : ''}</button>` : ''}
+      <button class="toc" data-na="add">replace audiobook</button><button class="toc bad" data-na="remove">remove audiobook</button>`;
+    box.querySelectorAll('#naUse button').forEach(b => b.classList.toggle('on', (b.dataset.na === 'use1') === naUsable()));
+  }
+  document.querySelectorAll('#sheetBody .vo').forEach(x => { x.hidden = naUsable(); });
+  ttsRefresh();
+}
 
 /* =============== bookmarks + highlights =============== */
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -2911,7 +3414,7 @@ function openSheet(kind, arg){
   if (kind === 'toc'){ $('#sheetTitle').textContent = R.meta ? R.meta.title : 'contents'; buildContents(body); }
   else if (kind === 'edit'){ $('#sheetTitle').textContent = 'edit details'; buildEdit(body, arg); }
   else if (kind === 'backup'){ BK = {start: !!BK.start}; $('#sheetTitle').textContent = 'backup & restore'; buildBackup(body); }
-  else if (kind === 'listen'){ $('#sheetTitle').textContent = 'read aloud'; buildListen(body); }
+  else if (kind === 'listen'){ $('#sheetTitle').textContent = 'listen'; buildListen(body); }
   else if (kind === 'define'){ $('#sheetTitle').textContent = arg; buildDefine(body, arg); }
   else if (kind === 'music'){ $('#sheetTitle').textContent = 'music'; buildMusic(body); }
   else if (kind === 'stats'){ $('#sheetTitle').textContent = 'reading stats'; buildStats(body); }
@@ -3259,8 +3762,8 @@ addEventListener('popstate', () => {
   if (!$('#sheet').hidden){ closeSheet(); try { history.pushState({r: 1}, ''); } catch (e) {} return; }
   closeBook(true);
 });
-addEventListener('pagehide', () => { flushSave(); saveSettings(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden){ flushSave(); saveSettings(); if (TT.on && !TT.paused && S.ttsBg === 'off') ttsPause(); } else ttsRecover(); });
+addEventListener('pagehide', () => { flushSave(); saveSettings(); if (NA.on) naSaveT(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden){ flushSave(); saveSettings(); if (NA.on) naSaveT(true); if (TT.on && !TT.paused && S.ttsBg === 'off') ttsPause(); } else ttsRecover(); });
 addEventListener('pageshow', e => { if (e.persisted) ttsRecover(); });
 
 applyTheme();

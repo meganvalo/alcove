@@ -25,6 +25,14 @@ It's built mainly for iPhone and iPad (Safari), but works in any modern browser.
 - Table of contents (from the PDF's outline), page slider, bookmarks
 - Optional dark rendering for dark themes
 
+**Narration (audiobook sync)**
+- Attach an `.m4b`, `.m4a` or `.mp3` audiobook to an EPUB (read aloud sheet, **add an audiobook**) and the text follows the narrator: the current sentence is highlighted and pages turn by themselves
+- Chapters in the audio file (Nero and QuickTime chapter marks) are matched to the book's chapters by number, title and length
+- Turn a page yourself while it plays and the audio jumps to the top of that page. Start playing and it carries on from where the audio was, or from your page if you have read on
+- Speed (its own setting, separate from the device voice), sleep timer (including end of chapter), skip back and forward, previous and next chapter or paragraph, listening mode, and lock screen and headphone controls with the cover
+- **Move highlight** nudges the text by 1 or 5 sentences if it drifts from the voice, and the fix stays from that point on
+- Switch between the audiobook and the device voice at any time
+
 **Other**
 - Works offline once loaded
 - Position is saved precisely (by text location, not just percentage), so it survives changing text size or layout
@@ -94,12 +102,16 @@ Right arrow or space: next page. Left arrow: previous page. Escape: close panels
 
 ## Your data and privacy
 
-- Books, covers, reading positions, dates, bookmarks and highlights are stored in your browser's local storage (IndexedDB) on that device. Nothing is uploaded anywhere.
+- Books, audiobooks, covers, reading positions, dates, bookmarks and highlights are stored in your browser's local storage (IndexedDB) on that device. Nothing is uploaded anywhere.
 - There are no accounts, no analytics and no tracking.
 - The only network request the app makes beyond loading its own files is for **PDF support**: the first time you add or open a PDF it downloads [PDF.js](https://mozilla.github.io/pdf.js/) from the cdnjs CDN. It's cached afterwards, so PDFs then work offline.
 - **Nothing syncs between devices.** If you clear website data, delete the Home Screen app, or iOS clears storage for an unused site, your library goes with it. Keep your original book files.
 
 ## Limitations
+
+- Narration highlighting is an estimate, not a word-by-word alignment. Inside a chapter the time is spread over the text by length, so it is usually within a sentence or two and the **move highlight** buttons fix the rest. Audiobooks that differ a lot from the EPUB (abridged, different edition) will drift more.
+- Narration needs one audio file per book (no folders of mp3 chapters yet) and an EPUB, not a PDF.
+- The audiobook file and its sync fixes are not included in backups. Keep the original audio file and add it again on a new device.
 
 - No DRM support. Copy-protected EPUBs (for example from Kindle or Kobo stores) won't open.
 - Highlights work in EPUBs only, not PDFs.
