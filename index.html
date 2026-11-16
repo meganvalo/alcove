@@ -2134,6 +2134,7 @@ function ttsOnScreen(){
 let recoverT;
 function ttsRecover(){
   clearTimeout(recoverT);
+  naCheck();
   if (NA.on){ naResync(); return; }
   if (!(TT.on && !TT.paused && synth)) return;
   recoverT = setTimeout(async () => {
@@ -2400,9 +2401,12 @@ async function naLoad(){
     au._p = 0; NA.url = URL.createObjectURL(blob); au.src = NA.url;
     await new Promise(res => { const d = () => { au.removeEventListener('loadedmetadata', d); au.removeEventListener('error', d); res(); }; au.addEventListener('loadedmetadata', d); au.addEventListener('error', d); setTimeout(d, 8000); });
     if (au.error) return false;
-    try { au.currentTime = Math.max(0, Math.min(meta.nar.t || 0, (au.duration || meta.nar.dur) - 1)); } catch (e) {}
-    NA.id = meta.id; NA.ready = true; naWire(); return true;
-  })().catch(e => { console.error(e); return false; }).finally(() => { NA.loading = null; });
+    let want = meta.nar.t || 0;
+    try { const j = JSON.parse(localStorage.getItem(naKey(meta.id)) || 'null'); if (j && j.at > (meta.nar.tAt || 0) && j.t >= 0) want = j.t; } catch (e) {}
+    NA.id = meta.id; NA.restoring = true; naWire();
+    await naSetTime(want); meta.nar.t = au.currentTime > 0 || !want ? au.currentTime : want;
+    NA.restoring = false; NA.ready = true; return true;
+  })().catch(e => { console.error(e); NA.restoring = false; return false; }).finally(() => { NA.loading = null; });
   return NA.loading;
 }
 function naWire(){
@@ -2411,6 +2415,7 @@ function naWire(){
   au.addEventListener('pause', () => { if (NA.on && !TT.paused && !au.ended){ TT.paused = true; naTickStop(); naSaveT(true); if ($('#lm').hidden) wakeOff(); ttsRefresh(); } });
   au.addEventListener('ended', () => { if (NA.on){ TT.paused = true; naTickStop(); naSaveT(true); ttsRefresh(); toast('reached the end'); } });
   au.addEventListener('seeked', () => { if (NA.on){ naKick(); naPos(); } });
+  au.addEventListener('timeupdate', () => { if (NA.on && !TT.paused && Date.now() - (NA.lastLs || 0) > 3000){ NA.lastLs = Date.now(); naMirror(); } });
   au.addEventListener('error', () => { if (NA.on){ TT.paused = true; naTickStop(); ttsRefresh(); toast("couldn't play the audiobook"); } });
 }
 /* iOS only lets an element play if it was started by a tap; do a silent play+pause during the tap so later starts are allowed */
@@ -2422,10 +2427,40 @@ function naPrime(){
     Promise.resolve(p).then(() => { if (!NA.on || TT.paused) au.pause(); }).catch(() => {}).finally(() => { au.muted = false; });
   } catch (e) { au.muted = false; }
 }
+const naKey = id => 'alcove.nart.' + id;
+function naMirror(){                                         /* remember the audio position in memory and in localStorage (cheap, and written straight away) */
+  const m = R.meta, au = NA.au; if (!m || !m.nar || !au || NA.id !== m.id || !NA.ready || NA.restoring || au.error) return false;
+  const t = au.currentTime; if (!(t >= 0)) return false;
+  m.nar.t = t; m.nar.tAt = Date.now();
+  try { localStorage.setItem(naKey(m.id), JSON.stringify({t, at: m.nar.tAt})); } catch (e) {}
+  return true;
+}
 function naSaveT(force){
-  const m = R.meta; if (!m || !m.nar || !NA.au || NA.id !== m.id) return;
-  NA.lastSave = Date.now(); m.nar.t = NA.au.currentTime; m.nar.tAt = NA.lastSave;
+  const m = R.meta; if (!naMirror()) return;
+  NA.lastSave = m.nar.tAt;
   if (force) dbPut('books', m).catch(() => {}); else saveMarks();
+}
+/* put the audio at t and make sure it really went there (iOS can ignore a seek made before enough of the file is ready) */
+async function naSetTime(t){
+  const au = NA.au; if (!au) return false;
+  const d = au.duration || (R.meta && R.meta.nar && R.meta.nar.dur) || 0; t = Math.max(0, d ? Math.min(t, d - 1) : t);
+  for (let k = 0; k < 3; k++){
+    try { au.currentTime = t; } catch (e) {}
+    await new Promise(res => { const f = () => { au.removeEventListener('seeked', f); res(); }; au.addEventListener('seeked', f); setTimeout(f, 700); });
+    if (Math.abs(au.currentTime - t) < 1.5) return true;
+    await new Promise(r => setTimeout(r, 250));
+  }
+  return false;
+}
+/* back from another app: is the audio still where we left it, and still loaded? */
+function naCheck(){
+  const au = NA.au, m = R.meta; if (!NA.ready || !au || !naHas()) return;
+  if (au.error || au.networkState === 3){
+    const was = NA.on && !TT.paused; NA.ready = false; NA.id = null;
+    naLoad().then(ok => { if (ok && was) naPlayNow(); });
+    return;
+  }
+  if (!NA.on && !au.seeking && au.currentTime < 1 && (m.nar.t || 0) > 5) naSetTime(m.nar.t);
 }
 function naClose(){
   naTickStop(); NA.on = false;
@@ -2446,7 +2481,7 @@ async function naStart(){
       const loc = await naLocate(naT2G(au.currentTime)), v = visibleRange(); let t = au.currentTime;
       const s = loc && TT.sents[loc.si];
       if (!(s && v && v.i === loc.ci && s.s >= v.a - 60 && s.s <= v.b)){ const an = currentAnchor(); if (an) t = await naTimeAt(an.i, an.off); }
-      au.currentTime = t;
+      await naSetTime(t); if (t > 5) toast('resuming at ' + naFmt(t));
     } catch (e) { console.error(e); }
   });
   await naPlayNow();
@@ -3774,8 +3809,8 @@ addEventListener('popstate', () => {
   if (!$('#sheet').hidden){ closeSheet(); try { history.pushState({r: 1}, ''); } catch (e) {} return; }
   closeBook(true);
 });
-addEventListener('pagehide', () => { flushSave(); saveSettings(); if (NA.on) naSaveT(true); });
-document.addEventListener('visibilitychange', () => { if (document.hidden){ flushSave(); saveSettings(); if (NA.on) naSaveT(true); if (TT.on && !TT.paused && S.ttsBg === 'off') ttsPause(); } else ttsRecover(); });
+addEventListener('pagehide', () => { flushSave(); saveSettings(); if (NA.ready) naSaveT(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden){ flushSave(); saveSettings(); if (NA.ready) naSaveT(true); if (TT.on && !TT.paused && S.ttsBg === 'off') ttsPause(); } else ttsRecover(); });
 addEventListener('pageshow', e => { if (e.persisted) ttsRecover(); });
 
 applyTheme();
