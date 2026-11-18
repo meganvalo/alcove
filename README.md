@@ -32,6 +32,7 @@ It's built mainly for iPhone and iPad (Safari), but works in any modern browser.
 - Speed (its own setting, separate from the device voice), sleep timer (including end of chapter), skip back and forward, previous and next chapter or paragraph, listening mode, and lock screen and headphone controls with the cover
 - **Highlight timing** (earlier / later, in half-second steps) fixes a highlight that is a little early or late all through the book
 - **Move highlight** nudges the text by 1 or 5 sentences if it drifts from the voice, and the fix stays from that point on
+- A player bar like the Kindle app's sits at the bottom of the reader (with an audiobook or the device voice; settings, **audio bar**: always, when playing, or hidden): play or pause, back 30 seconds, speed (tap to cycle), and time left in the book. Tap the bar to open the full controls
 - Switch between the audiobook and the device voice at any time
 
 **Other**

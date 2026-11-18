@@ -1479,6 +1479,7 @@ function progress(){
   $('#slider').value = Math.round(p * 1000);
   { const rr = $('#rhR'); if (rr) rr.textContent = label || ''; }
   $('#sl1').textContent = label; $('#sl2').textContent = pct + (R.kind === 'pdf' || !R.book ? '' : ' · ' + timeLeftTxt());
+  naBar();
   clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 600);
   clearTimeout(mkTimer); mkTimer = setTimeout(refreshMark, 300);
 }
@@ -2727,22 +2728,27 @@ function refreshNaBox(){
 const NB_PLAY = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M8 5.2v13.6L19 12z"/></svg>';
 const NB_PAUSE = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
 function naLeftTxt(){
+  if (!naUsable()){                                          /* device voice: no audio file, so go by the reading-time estimate */
+    if (R.kind === 'pdf') return P.n ? 'page ' + P.cur + ' of ' + P.n : '';
+    const t = timeLeftTxt(); return t ? t.replace(/ left$/, ' left in book') : '';
+  }
   const n = R.meta.nar, t = (NA.au && NA.ready) ? NA.au.currentTime : (n.t || 0);
   const m = Math.round(Math.max(0, n.dur - t) / rateNow() / 60), h = Math.floor(m / 60);
   return m < 1 ? 'less than a minute left in book' : (h ? h + 'h ' + (m % 60) + 'm' : m + 'm') + ' left in book';
 }
 function naBar(){
-  const reader = $('#reader'), on = !!(R.meta && R.kind === 'epub' && naUsable() && reader && !reader.hidden);
-  if (on !== document.body.classList.contains('nb')){ document.body.classList.toggle('nb', on); if (R.doc) setTimeout(relayout, 80); }
+  const reader = $('#reader'), mode = S.nbar || 'always';
+  const on = !!(R.meta && R.kind && reader && !reader.hidden && mode !== 'off' && (naUsable() || synth) && (mode === 'always' || TT.on));
+  if (on !== document.body.classList.contains('nb')){ document.body.classList.toggle('nb', on); if (R.doc || R.kind === 'pdf') setTimeout(relayout, 80); }
   if (!on) return;
   const set = (id, v) => { const e = $(id); if (e.textContent !== v) e.textContent = v; };
   set('#nbTitle', R.meta.title || ''); set('#nbSub', naLeftTxt());
   const r = rateNow(); set('#nbSpeed', (Math.round(r * 100) / 100) + ' x');
-  const playing = NA.on && !TT.paused, pl = $('#nbPlay'), k = playing ? 'p' : 'o';
+  const playing = TT.on && !TT.paused, pl = $('#nbPlay'), k = playing ? 'p' : 'o';
   if (pl.dataset.k !== k){ pl.dataset.k = k; pl.innerHTML = playing ? NB_PAUSE : NB_PLAY; pl.setAttribute('aria-label', playing ? 'pause' : 'play'); }
 }
 $('#nbPlay').onclick = e => { e.stopPropagation(); naPrime(); ttsToggle(); };
-$('#nbBack').onclick = e => { e.stopPropagation(); if (NA.ready && NA.au){ naSeek(NA.au.currentTime - 30); naBar(); } };
+$('#nbBack').onclick = e => { e.stopPropagation(); if (naUsable()){ if (NA.ready && NA.au){ naSeek(NA.au.currentTime - 30); naBar(); } } else if (TT.on) ttsSkip(-30); };
 $('#nbSpeed').onclick = e => { e.stopPropagation(); const r = rateNow(), i = RATES.findIndex(x => Math.abs(x - r) < .001); ttsSetRate(RATES[(i + 1) % RATES.length]); };
 $('#nbGrab').onclick = $('#nbMeta').onclick = e => { e.stopPropagation(); naPrime(); openSheet('listen'); };
 
@@ -3677,7 +3683,7 @@ function bindSettings(body){
     else if (b.dataset.val){ const k0 = b.closest('[data-key]').dataset.key; S[k0] = b.dataset.val; pbSet(k0, b.dataset.val); }
     else return;
     const lk = b.closest('[data-key]') && b.closest('[data-key]').dataset.key === 'layout', st = body.scrollTop;
-    saveSettings(); applyTheme(); sync(); applyLayout();
+    saveSettings(); applyTheme(); sync(); applyLayout(); naBar();
     if (lk){ buildSettings(body); body.scrollTop = st; }
   };
   sync();
@@ -3698,6 +3704,7 @@ function buildSettings(body){
   <div class="row"><span>paragraphs</span><div class="seg" data-key="para"><button data-val="book">as book</button><button data-val="indent">indent</button><button data-val="block">spaced</button></div></div>
   <div class="row"><span>running header</span><div class="seg" data-key="head"><button data-val="on">on</button><button data-val="off">off</button></div></div>
   <div class="row"><span>footer shows</span><div class="seg" data-key="foot"><button data-val="page">page</button><button data-val="pct">percent</button><button data-val="none">hidden</button></div></div>
+  <div class="row"><span>audio bar</span><div class="seg" data-key="nbar"><button data-val="always">always</button><button data-val="playing">when playing</button><button data-val="off">hidden</button></div></div>
   <div class="row"><span>tap zones</span><div class="seg" data-key="tapz"><button data-val="narrow">narrow</button><button data-val="normal">normal</button><button data-val="wide">wide</button></div></div>
   <div class="row"><span>dim</span><input type="range" data-rng="dim" min="0" max="60" value="${Number(S.dim) || 0}" aria-label="dim screen"></div>
   <div class="row"><span>warmth</span><input type="range" data-rng="warm" min="0" max="100" value="${Number(S.warm) || 0}" aria-label="warm tint"></div>
