@@ -87,7 +87,7 @@ body.side-open #side{transform:none}body.side-open #scrim{opacity:1;pointer-even
 .mrow .nm{flex:1;min-width:0;padding:13px 0;text-align:left;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mrow.cur .nm{color:var(--accent)}.mrow .x{padding:10px 2px 10px 14px;color:var(--dim);font-size:20px}
 #musBtn.on{color:var(--accent)}.mnote{font-size:12px;color:var(--dim);margin:12px 0 0;line-height:1.4}
-#noteCard{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:50;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.28);padding:14px 16px 8px;max-height:46vh;display:flex;flex-direction:column}
+#noteCard{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + var(--nb) + 14px);z-index:50;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.28);padding:14px 16px 8px;max-height:46vh;display:flex;flex-direction:column}
 #noteCard[hidden]{display:none}#noteCard .nt{overflow-y:auto;font-size:15px;line-height:1.5;-webkit-overflow-scrolling:touch}
 #noteCard .na{display:flex;justify-content:flex-end;gap:18px;margin-top:6px}#noteCard .na button{padding:8px 2px;font-size:14px;color:var(--dim)}#noteCard #noteGo{color:var(--accent)}
 #runhead{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 8px);display:flex;padding:0 var(--rhx,40px);gap:calc(var(--rhx,40px) * 2);pointer-events:none;z-index:3;font:11px/1 -apple-system,system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)}
@@ -134,14 +134,16 @@ body.dragging #lib{outline:2px dashed var(--accent);outline-offset:-10px}
 #empty button{color:var(--accent);border:1px solid var(--accent);border-radius:22px;padding:11px 24px;font-size:16px}
 
 /* ---------- reader ---------- */
+body{--nb:0px;--ft:calc(40px + env(safe-area-inset-bottom))}
+body.nb{--nb:calc(104px + env(safe-area-inset-bottom));--ft:40px}
 #reader{display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 #frame{flex:1;width:100%;border:0;display:block;background:var(--bg);opacity:0;transition:opacity .15s}
-#foot{display:flex;align-items:center;gap:12px;height:calc(40px + env(safe-area-inset-bottom));
-  padding:0 20px env(safe-area-inset-bottom);font-size:12px;color:var(--dim)}
+#foot{display:flex;align-items:center;gap:12px;height:var(--ft);flex:none;
+  padding:0 20px calc(var(--ft) - 40px);font-size:12px;color:var(--dim)}
 #libBtn{flex:none;color:var(--fg);font-size:14px;padding:10px 8px 10px 0}
 #chap{flex:1;min-width:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #pct{flex:none;min-width:34px;text-align:right}
-#gesture{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(40px + env(safe-area-inset-bottom));z-index:3;touch-action:none;-webkit-user-select:none;user-select:none}
+#gesture{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(var(--ft) + var(--nb));z-index:3;touch-action:none;-webkit-user-select:none;user-select:none}
 #reader[data-layout=scroll] #gesture{display:none}
 #reader[data-layout=scroll].show #gesture{display:block}
 .chrome{position:absolute;left:0;right:0;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
@@ -152,7 +154,7 @@ body.dragging #lib{outline:2px dashed var(--accent);outline-offset:-10px}
 #top .r{display:flex;align-items:center;gap:12px;flex:none}
 @media (max-width:420px){#top{padding-left:14px;padding-right:14px}#top .mid{font-size:12px}}
 #top .l{flex:none;text-align:left}
-#bottom{bottom:0;padding:16px 22px calc(env(safe-area-inset-bottom) + 16px);transform:translateY(100%);border-top:1px solid var(--line)}
+#bottom{bottom:var(--nb);padding:16px 22px calc(var(--ft) - 24px);transform:translateY(100%);border-top:1px solid var(--line)}
 #reader.show .chrome{transform:none}
 #slider{width:100%;-webkit-appearance:none;appearance:none;height:30px;background:transparent;margin:0}
 #slider::-webkit-slider-runnable-track{height:2px;background:var(--line);border-radius:2px}
@@ -161,8 +163,23 @@ body.dragging #lib{outline:2px dashed var(--accent);outline-offset:-10px}
 #ttsBtn{flex:none;width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--dim)}#ttsBtn.on{color:var(--accent)}
 .row select{max-width:62%;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);font:15px -apple-system,system-ui,sans-serif;-webkit-appearance:none;appearance:none}.row select option{color:#000}
 #sliderLabel{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:2px}
-#backpill{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 44px);z-index:4;
+#backpill{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--ft) + var(--nb) + 4px);z-index:4;
   background:var(--accent);color:var(--on-accent);padding:9px 18px;border-radius:22px;font-size:14px;font-weight:500}
+
+/* audiobook bar (like the Kindle app's): sits under the footer while the book has an audiobook */
+body.nb #bottom{transform:translateY(calc(100% + var(--nb)))}
+#nbar{display:none;flex:none;height:var(--nb);box-sizing:border-box;flex-direction:column;position:relative;z-index:6;padding:8px 22px env(safe-area-inset-bottom);
+  background:var(--bg);background:color-mix(in srgb,var(--fg) 8%,var(--bg));border-top:1px solid var(--line);border-radius:20px 20px 0 0;color:var(--fg)}
+body.nb #nbar{display:flex}
+#nbar .grab{align-self:center;flex:none;width:100%;height:22px;display:flex;align-items:flex-start;justify-content:center;padding-top:2px}
+#nbar .grab i{display:block;width:38px;height:5px;border-radius:3px;background:var(--dim);opacity:.55}
+#nbar .nrow{flex:1;min-height:0;display:flex;align-items:center;gap:6px;margin-top:-6px}
+#nbar .nmeta{flex:1;min-width:0;text-align:left;padding:4px 0}
+#nbar .nt{font-size:17px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nbar .ns{font-size:15px;color:var(--dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nbar .nsp{flex:none;min-width:52px;height:48px;font-size:24px;font-weight:500;white-space:nowrap}
+#nbar .nbk{flex:none;width:48px;height:48px;display:flex;align-items:center;justify-content:center}
+#nbar .npl{flex:none;width:58px;height:58px;margin-left:6px;border:2px solid var(--fg);border-radius:50%;display:flex;align-items:center;justify-content:center}
 
 /* ---------- sheet ---------- */
 #sheet{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,0);transition:background .22s}
@@ -212,7 +229,7 @@ body.dragging #lib{outline:2px dashed var(--accent);outline-offset:-10px}
 #bmBtn.on{color:var(--accent)}
 #bmBtn.on path{fill:currentColor}
 #bmMark{flex:none;width:9px;height:12px;color:var(--accent)}
-#selLayer{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(40px + env(safe-area-inset-bottom));overflow:hidden;pointer-events:none;z-index:4}
+#selLayer{position:absolute;left:0;right:0;top:env(safe-area-inset-top);bottom:calc(var(--ft) + var(--nb));overflow:hidden;pointer-events:none;z-index:4}
 #pdfView{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;background:var(--bg)}
 #pdfPages{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px;width:max-content;min-width:100%}
 .pg{flex:none;background:#fff;box-shadow:0 0 0 1px var(--line)}
@@ -224,7 +241,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 #hlDots{display:flex;gap:6px}
 #hlbar{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);row-gap:2px;border-radius:22px}
 @media (max-width:520px){#hlDots{flex-basis:100%;justify-content:center}}
-#hlbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 58px);z-index:15;display:flex;align-items:center;gap:6px;
+#hlbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--ft) + var(--nb) + 18px);z-index:15;display:flex;align-items:center;gap:6px;
   padding:7px 12px;border-radius:28px;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.35)}
 #hlbar button{font-size:13px;padding:6px 6px;color:var(--fg)}
 #hlbar [hidden]{display:none}
@@ -242,7 +259,7 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
 .mk .sub{font-size:12px;color:var(--dim);margin-top:3px}
 .mk .x{color:var(--dim);font-size:22px;line-height:1;padding:0 6px}
 .empty{padding:26px 22px;color:var(--dim);font-size:14px;line-height:1.45}
-#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 28px);z-index:30;
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + var(--nb) + 28px);z-index:30;
   background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:22px;font-size:14px;max-width:86vw;text-align:center;
   opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.on{opacity:1}
@@ -325,6 +342,13 @@ body[data-pdf=inv] .pg canvas{filter:invert(1) hue-rotate(180deg)}
   <div id="selLayer"></div>
   <div id="pdfView"><div id="pdfPages"></div></div>
   <div id="foot"><button id="libBtn">library</button><span id="chap"></span><svg id="bmMark" hidden viewBox="0 0 16 20"><path d="M2 1.5h12v17l-6-4.5-6 4.5z" fill="currentColor"/></svg><span id="pct"></span></div>
+  <div id="nbar"><div class="grab" id="nbGrab" role="button" aria-label="audiobook controls"><i></i></div>
+    <div class="nrow">
+      <div class="nmeta" id="nbMeta"><div class="nt" id="nbTitle"></div><div class="ns" id="nbSub"></div></div>
+      <button class="nsp" id="nbSpeed" aria-label="playback speed"></button>
+      <button class="nbk" id="nbBack" aria-label="back 30 seconds"><svg width="34" height="34" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7a10 10 0 1 1-8.66 5"/><path d="M19.5 3.5 15.8 7l3.7 3.5"/><text x="16" y="20.6" text-anchor="middle" font-size="9.5" font-weight="700" fill="currentColor" stroke="none" font-family="-apple-system,system-ui,sans-serif">30</text></svg></button>
+      <button class="npl" id="nbPlay" aria-label="play"></button>
+    </div></div>
   <button id="backpill" hidden>back to where you were</button>
   <div id="bottom" class="chrome">
     <div class="srow2"><button id="ttsBtn" aria-label="read aloud"><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8v4h3l4 3.5v-11L6 8z"/><path d="M13.5 7.5a3.5 3.5 0 010 5M15.8 5.2a6.5 6.5 0 010 9.6"/></svg></button><input id="slider" type="range" min="0" max="1000" value="0" aria-label="position in book"></div>
@@ -1026,6 +1050,7 @@ async function openBook(id){
     meta.opened = Date.now(); dbPut('books', meta);
     try { localStorage.setItem('alcove.last', id); } catch (e) {}
     hideToast();
+    naBar();
     if (meta.nar) naLoad().then(refreshNaBox);
   } catch (e) {
     console.error(e);
@@ -1037,7 +1062,7 @@ async function openBook(id){
 }
 async function closeBook(fromPop){
   flushSave();
-  ttsStop(); naClose(); $('#lm').hidden = true; wakeOff();
+  ttsStop(); naClose(); document.body.classList.remove('nb'); $('#lm').hidden = true; wakeOff();
   pbRestore(); saveSettings();
   closeSheet(true);
   closeLightbox();
@@ -2169,6 +2194,7 @@ const tIc = {
 const RATES = [.8, 1, 1.25, 1.5, 2], SLEEPS = ['0', '15', '30', 'end'];
 const sleepLabel = () => TT.sleepEnd ? 'chapter' : TT.sleepAt ? (TT.sleepMin + 'm') : 'off';
 function ttsRefresh(){
+  naBar();
   const playing = TT.on && !TT.paused;
   const b = $('#ttsBtn'); if (b) b.classList.toggle('on', playing);
   const rate = rateNow();
@@ -2507,7 +2533,7 @@ function naTick(){
   const now = Date.now();
   if (TT.sleepAt && now >= TT.sleepAt){ TT.sleepAt = 0; naPause(); toast('sleep timer: paused the audiobook'); return; }
   if (now - NA.lastSave > 10000) naSaveT();
-  if (now - (NA.lastUi || 0) > 1000 && document.querySelector('#tNow')){ NA.lastUi = now; ttsRefresh(); }
+  if (now - (NA.lastUi || 0) > 1000){ NA.lastUi = now; if (document.querySelector('#tNow')) ttsRefresh(); else naBar(); }
   if (NA.tickBusy) return; NA.tickBusy = true;
   naRun(() => naSync()).finally(() => { NA.tickBusy = false; });
 }
@@ -2643,6 +2669,7 @@ function naAct(a){
 }
 const naLagTxt = () => { const l = naLag(); return l ? (l > 0 ? 'later ' : 'earlier ') + Math.abs(l).toFixed(1) + 's' : 'on time'; };
 function refreshNaBox(){
+  naBar();
   const box = document.querySelector('#naBox'); if (!box) return;
   if (!naHas() && R.kind !== 'epub'){ box.innerHTML = ''; }
   else if (!naHas()){
@@ -2661,6 +2688,29 @@ function refreshNaBox(){
   document.querySelectorAll('#sheetBody .vo').forEach(x => { x.hidden = naUsable(); });
   ttsRefresh();
 }
+
+/* ---- the audiobook bar at the bottom of the reader ---- */
+const NB_PLAY = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M8 5.2v13.6L19 12z"/></svg>';
+const NB_PAUSE = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+function naLeftTxt(){
+  const n = R.meta.nar, t = (NA.au && NA.ready) ? NA.au.currentTime : (n.t || 0);
+  const m = Math.round(Math.max(0, n.dur - t) / rateNow() / 60), h = Math.floor(m / 60);
+  return m < 1 ? 'less than a minute left in book' : (h ? h + 'h ' + (m % 60) + 'm' : m + 'm') + ' left in book';
+}
+function naBar(){
+  const reader = $('#reader'), on = !!(R.meta && R.kind === 'epub' && naUsable() && reader && !reader.hidden);
+  if (on !== document.body.classList.contains('nb')){ document.body.classList.toggle('nb', on); if (R.doc) setTimeout(relayout, 80); }
+  if (!on) return;
+  const set = (id, v) => { const e = $(id); if (e.textContent !== v) e.textContent = v; };
+  set('#nbTitle', R.meta.title || ''); set('#nbSub', naLeftTxt());
+  const r = rateNow(); set('#nbSpeed', (Math.round(r * 100) / 100) + ' x');
+  const playing = NA.on && !TT.paused, pl = $('#nbPlay'), k = playing ? 'p' : 'o';
+  if (pl.dataset.k !== k){ pl.dataset.k = k; pl.innerHTML = playing ? NB_PAUSE : NB_PLAY; pl.setAttribute('aria-label', playing ? 'pause' : 'play'); }
+}
+$('#nbPlay').onclick = e => { e.stopPropagation(); naPrime(); ttsToggle(); };
+$('#nbBack').onclick = e => { e.stopPropagation(); if (NA.ready && NA.au){ naSeek(NA.au.currentTime - 30); naBar(); } };
+$('#nbSpeed').onclick = e => { e.stopPropagation(); const r = rateNow(), i = RATES.findIndex(x => Math.abs(x - r) < .001); ttsSetRate(RATES[(i + 1) % RATES.length]); };
+$('#nbGrab').onclick = $('#nbMeta').onclick = e => { e.stopPropagation(); naPrime(); openSheet('listen'); };
 
 /* =============== bookmarks + highlights =============== */
 const uid = () => Math.random().toString(36).slice(2, 10);
