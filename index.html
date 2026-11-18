@@ -136,6 +136,7 @@ body.dragging #lib{outline:2px dashed var(--accent);outline-offset:-10px}
 /* ---------- reader ---------- */
 body{--nb:0px;--ft:calc(40px + env(safe-area-inset-bottom))}
 body.nb{--nb:calc(104px + env(safe-area-inset-bottom));--ft:40px}
+body.nb.nbc{--nb:calc(34px + env(safe-area-inset-bottom))}
 #reader{display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 #frame{flex:1;width:100%;border:0;display:block;background:var(--bg);opacity:0;transition:opacity .15s}
 #foot{display:flex;align-items:center;gap:12px;height:var(--ft);flex:none;
@@ -170,7 +171,9 @@ body.nb{--nb:calc(104px + env(safe-area-inset-bottom));--ft:40px}
 body.nb #bottom{transform:translateY(calc(100% + var(--nb)))}
 #nbar{display:none;flex:none;height:var(--nb);box-sizing:border-box;flex-direction:column;position:relative;z-index:6;padding:8px 22px env(safe-area-inset-bottom);
   background:var(--bg);background:color-mix(in srgb,var(--fg) 8%,var(--bg));border-top:1px solid var(--line);border-radius:20px 20px 0 0;color:var(--fg)}
-body.nb #nbar{display:flex}
+body.nb #nbar{display:flex;touch-action:none}
+body.nbc #nbar .nrow{display:none}
+body.nbc #nbar .grab{height:24px}
 #nbar .grab{align-self:center;flex:none;width:100%;height:22px;display:flex;align-items:flex-start;justify-content:center;padding-top:2px}
 #nbar .grab i{display:block;width:38px;height:5px;border-radius:3px;background:var(--dim);opacity:.55}
 #nbar .nrow{flex:1;min-height:0;display:flex;align-items:center;gap:6px;margin-top:-6px}
@@ -1062,7 +1065,7 @@ async function openBook(id){
 }
 async function closeBook(fromPop){
   flushSave();
-  ttsStop(); naClose(); document.body.classList.remove('nb'); $('#lm').hidden = true; wakeOff();
+  ttsStop(); naClose(); document.body.classList.remove('nb', 'nbc'); $('#lm').hidden = true; wakeOff();
   pbRestore(); saveSettings();
   closeSheet(true);
   closeLightbox();
@@ -2739,7 +2742,11 @@ function naLeftTxt(){
 function naBar(){
   const reader = $('#reader'), mode = S.nbar || 'always';
   const on = !!(R.meta && R.kind && reader && !reader.hidden && mode !== 'off' && (naUsable() || synth) && (mode === 'always' || TT.on));
-  if (on !== document.body.classList.contains('nb')){ document.body.classList.toggle('nb', on); if (R.doc || R.kind === 'pdf') setTimeout(relayout, 80); }
+  const col = on && !!S.nbCol;
+  if (on !== document.body.classList.contains('nb') || col !== document.body.classList.contains('nbc')){
+    document.body.classList.toggle('nb', on); document.body.classList.toggle('nbc', col); if (R.doc || R.kind === 'pdf') setTimeout(relayout, 80);
+  }
+  $('#nbGrab').setAttribute('aria-label', col ? 'show audio controls' : 'hide audio controls');
   if (!on) return;
   const set = (id, v) => { const e = $(id); if (e.textContent !== v) e.textContent = v; };
   set('#nbTitle', R.meta.title || ''); set('#nbSub', naLeftTxt());
@@ -2750,7 +2757,20 @@ function naBar(){
 $('#nbPlay').onclick = e => { e.stopPropagation(); naPrime(); ttsToggle(); };
 $('#nbBack').onclick = e => { e.stopPropagation(); if (naUsable()){ if (NA.ready && NA.au){ naSeek(NA.au.currentTime - 30); naBar(); } } else if (TT.on) ttsSkip(-30); };
 $('#nbSpeed').onclick = e => { e.stopPropagation(); const r = rateNow(), i = RATES.findIndex(x => Math.abs(x - r) < .001); ttsSetRate(RATES[(i + 1) % RATES.length]); };
-$('#nbGrab').onclick = $('#nbMeta').onclick = e => { e.stopPropagation(); naPrime(); openSheet('listen'); };
+$('#nbMeta').onclick = e => { e.stopPropagation(); naPrime(); openSheet('listen'); };
+/* collapse to a slim handle and bring it back: tap the handle, or swipe down / up on the bar (swipe up on the open bar opens the full controls) */
+function nbCollapse(c){ S.nbCol = !!c; saveSettings(); naBar(); }
+$('#nbGrab').onclick = e => { e.stopPropagation(); nbCollapse(!S.nbCol); };
+{
+  let y0 = null;
+  const bar = $('#nbar');
+  bar.addEventListener('touchstart', e => { y0 = e.touches.length === 1 ? e.touches[0].clientY : null; }, {passive: true});
+  bar.addEventListener('touchend', e => {
+    if (y0 == null) return; const dy = e.changedTouches[0].clientY - y0; y0 = null;
+    if (dy > 28 && !S.nbCol) nbCollapse(true);
+    else if (dy < -28){ if (S.nbCol) nbCollapse(false); else { naPrime(); openSheet('listen'); } }
+  }, {passive: true});
+}
 
 /* =============== bookmarks + highlights =============== */
 const uid = () => Math.random().toString(36).slice(2, 10);
