@@ -28,7 +28,8 @@ body{
 /* iOS keeps the status bar text white, so cream mode gets a brown strip behind it */
 body::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:var(--status);z-index:100;pointer-events:none}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
-.view{position:fixed;inset:0;background:var(--bg)}
+.view{position:fixed;left:0;right:0;top:0;bottom:0;height:var(--vh,auto);background:var(--bg)}
+body.nb{background:var(--bg);background:color-mix(in srgb,var(--fg) 8%,var(--bg))}
 
 /* ---------- library ---------- */
 #lib{overflow-y:auto;-webkit-overflow-scrolling:touch;
@@ -2004,6 +2005,21 @@ function ttsVoice(){
   const vs = ttsVoices(); const cur = vs.find(v => v.voiceURI === S.ttsVoice); if (cur) return cur;
   return vs.filter(v => !NOVELTY.test(v.name)).sort((a, b) => voiceQ(b) - voiceQ(a) || (b.default ? 1 : 0) - (a.default ? 1 : 0))[0] || vs[0] || null;
 }
+/* The engine is fed a few sentences at a time (a "chunk") rather than one per utterance: far fewer start/stop
+   cycles for iOS to choke on. Sentence highlighting follows word-boundary events, with a timer as a fallback
+   for voices that don't report them. */
+const CHUNK = 420;
+function ttsChunk(si, from){
+  const parts = []; let text = '';
+  for (let i = si; i < TT.sents.length; i++){
+    const s = TT.sents[i], say = i === si && from ? s.say.slice(from) : s.say;
+    if (parts.length && text.length + say.length + 1 > CHUNK) break;
+    parts.push({i, off: text ? text.length + 1 : 0, base: i === si ? from : 0});
+    text += (text ? ' ' : '') + say;
+    if (s.pb || (S.ttsClean !== 'off' && s.pause)) break;        /* paragraph ends (and their pauses) always end a chunk */
+  }
+  return {text, parts};
+}
 async function ttsSpeak(fresh, from, reset){
   const tok = ++TT.tok; from = from > 0 ? from : 0; TT.fly = null;
   if (TT.sleepAt && Date.now() >= TT.sleepAt){ ttsStop(); toast('sleep timer: stopped reading'); return; }
@@ -2021,28 +2037,52 @@ async function ttsSpeak(fresh, from, reset){
   await ttsEnsure(TT.ci, s.s); if (tok !== TT.tok) return;
   ttsShow(s); actAt = Date.now(); ttsRefresh();
   if (from >= s.say.length) from = 0;
-  const u = new SpeechSynthesisUtterance(from ? s.say.slice(from) : s.say), v = ttsVoice(), t0 = Date.now();
+  const ch = ttsChunk(TT.si, from), u = new SpeechSynthesisUtterance(ch.text), v = ttsVoice(), t0 = Date.now();
   if (v){ try { u.voice = v; } catch (e) {} u.lang = v.lang; }
   u.rate = Number(S.ttsRate) || 1;
   TT.bi = from;
-  const fly = {t0: Date.now(), last: Date.now(), nb: 0, exp: Math.max(0, s.say.length - from) / ttsCps() + 2};
-  u.onstart = () => { if (tok === TT.tok) fly.last = Date.now(); };
-  u.onboundary = e => { if (tok !== TT.tok) return; fly.last = Date.now(); if (e.name !== 'sentence'){ fly.nb++; TT.bi = from + (e.charIndex || 0); } };
+  let cur = 0;
+  const at = pos => {                                  /* move the highlight/position to where the voice has got to */
+    let k = cur; while (k + 1 < ch.parts.length && pos >= ch.parts[k + 1].off) k++;
+    const p = ch.parts[k]; TT.bi = p.base + Math.max(0, pos - p.off);
+    if (k > cur){ cur = k; TT.si = p.i; const s2 = TT.sents[p.i]; if (s2){ ttsShow(s2); actAt = Date.now(); ttsRefresh(); } }
+  };
+  const fly = {t0, ts: 0, last: t0, lastB: 0, nb: 0, marks: [], soft: false, exp: ch.text.length / ttsCps() + 2};
+  u.onstart = () => { if (tok === TT.tok){ fly.last = fly.ts = Date.now(); } };
+  u.onboundary = e => {
+    if (tok !== TT.tok) return; const now = fly.last = Date.now();
+    if (e.name === 'sentence') return;
+    fly.nb++; fly.lastB = now; const pos = e.charIndex || 0;
+    fly.marks.push([now, pos]); if (fly.marks.length > 60) fly.marks.shift();
+    at(pos);
+  };
+  if (ch.parts.length > 1) fly.tm = setInterval(() => {   /* timer fallback while no word events are arriving */
+    if (tok !== TT.tok || TT.paused){ clearInterval(fly.tm); return; }
+    const now = Date.now(); if (!fly.ts || now - fly.lastB < 1500) return;
+    at(Math.min(ch.text.length - 1, (now - fly.ts) / 1000 * ttsCps()));
+  }, 250);
   u.onend = () => {
+    clearInterval(fly.tm);
     if (tok !== TT.tok || TT.paused) return;
     TT.fly = null; TT.recov = 0;
-    const dur = (Date.now() - t0) / 1000, n = s.say.length - from;
-    if (!from && dur > 1 && n > 15 && dur < 60){ const c = n / (dur * (Number(S.ttsRate) || 1)); TT.cps = TT.cps ? TT.cps * .7 + c * .3 : c; }
-    TT.si++; TT.bi = 0; TT.n = (TT.n || 0) + 1;
-    ttsSpeak(false, 0, TT.n % 60 === 0);          /* every so often start the voice engine afresh, since it degrades over a long session */
+    const dur = (Date.now() - (fly.ts || t0)) / 1000, n = ch.text.length;
+    if (!from && dur > 1 && n > 15 && dur < 120){ const c = n / (dur * (Number(S.ttsRate) || 1)); TT.cps = TT.cps ? TT.cps * .7 + c * .3 : c; }
+    const last = ch.parts[ch.parts.length - 1], ended = TT.sents[last.i];
+    TT.si = last.i + 1; TT.bi = 0; TT.n = (TT.n || 0) + 1;
+    /* refresh the voice engine at a quiet moment (end of a paragraph) before it has time to degrade, not mid-sentence */
+    const age = Date.now() - (TT.engT || Date.now()), pb = !!(ended && ended.pb);
+    const doReset = ((TT.n >= 8 || age > 240000) && pb) || TT.n >= 14 || age > 420000;
+    ttsSpeak(false, 0, doReset);
   };
   u.onerror = e => {
+    clearInterval(fly.tm);
     if (tok !== TT.tok || e.error === 'interrupted' || e.error === 'canceled') return;
     if ((TT.recov || 0) < 3){ ttsUnstick(); return; }
     TT.paused = true; ttsRefresh(); toast('read aloud stopped');
   };
   TT.u = u; TT.keep = [...(TT.keep || []).slice(-4), u];     /* hold on to recent utterances so none is collected before it reports back */
-  if (fresh || reset){ synth.cancel(); await tSleep(reset ? 250 : 90); if (tok !== TT.tok) return; }
+  if (fresh || reset){ synth.cancel(); TT.n = 0; TT.engT = Date.now(); await tSleep(reset ? 250 : 90); if (tok !== TT.tok) return; }
+  if (!TT.engT) TT.engT = Date.now();
   fly.t0 = fly.last = Date.now(); TT.fly = fly;
   synth.speak(u);
 }
@@ -2062,10 +2102,17 @@ async function ttsUnstick(){
 function ttsWatch(){
   const f = TT.fly; if (!f || !TT.on || TT.paused || NA.on || TT.unst || !synth) return;
   const now = Date.now(), since = now - f.t0, idle = now - f.last;
-  const quiet = f.nb > 2 && idle > 4000;                       /* was reporting words, then went silent */
+  const quiet = f.nb > 2 && idle > 3500;                       /* was reporting words, then went silent */
+  /* early warning: words arriving far slower than this voice normally speaks = the "shudder" before it drops */
+  let slowing = false;
+  if (!f.soft && (TT.recov || 0) < 2 && f.nb >= 10){
+    const m = f.marks, old = [...m].reverse().find(x => now - x[0] >= 6000), nw = m[m.length - 1];
+    if (old && nw && nw[0] > old[0] && (nw[1] - old[1]) / ((nw[0] - old[0]) / 1000) < ttsCps() * .3) slowing = true;
+  }
+  if (slowing) f.soft = true;
   const slow = since > f.exp * 1.8 + 5000;                      /* far longer than the sentence should take */
   const dropped = (TT.recov || 0) < 2 && !synth.speaking && !synth.pending && since > 4500;   /* the engine lost it without saying so */
-  if (quiet || slow || dropped) ttsUnstick();
+  if (quiet || slow || dropped || slowing) ttsUnstick();
 }
 setInterval(ttsWatch, 1000);
 let kaAu = null;
@@ -3906,14 +3953,32 @@ setInterval(() => {
     extend();
   } catch (e) {}
 }, 250);
+/* keep the layout exactly as tall as the real screen (iOS standalone can report a short viewport) */
+let lastVH = 0;
+function fitVH(){
+  let h = innerHeight;
+  try { if (visualViewport && visualViewport.height + visualViewport.offsetTop > h) h = Math.round(visualViewport.height + visualViewport.offsetTop); } catch (e) {}
+  try {
+    const sa = (screen.width < screen.height ? screen.height : screen.width), sb = Math.min(screen.width, screen.height);
+    const land = innerWidth > innerHeight, full = land ? sb : sa;
+    const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+    if (standalone && full > h && full - h <= 120 && Math.abs(innerWidth - (land ? sa : sb)) < 2) h = full;
+  } catch (e) {}
+  document.documentElement.style.setProperty('--vh', h + 'px');
+  if (lastVH && Math.abs(h - lastVH) > 1) { lastVH = h; clearTimeout(rz); rz = setTimeout(relayout, 150); } else lastVH = h;
+}
 let rz;
 function relayout(){
   try { TT.selfAt = Date.now() + 4000; } catch (e) {}
   if (R.kind === 'pdf' && P.doc){ const pg = P.cur, fr = P.frac; pdfLayout(true); pdfGoto(pg, fr); }
   else if (R.doc) applyLayout();
 }
-addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(relayout, 150); });
-addEventListener('orientationchange', () => { clearTimeout(rz); rz = setTimeout(relayout, 350); });
+fitVH();
+addEventListener('resize', () => { fitVH(); clearTimeout(rz); rz = setTimeout(relayout, 150); });
+addEventListener('orientationchange', () => { fitVH(); setTimeout(fitVH, 300); clearTimeout(rz); rz = setTimeout(relayout, 350); });
+try { visualViewport.addEventListener('resize', fitVH); } catch (e) {}
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ fitVH(); setTimeout(fitVH, 400); } });
+addEventListener('pageshow', () => { fitVH(); setTimeout(fitVH, 400); });
 addEventListener('popstate', () => {
   if ($('#reader').hidden) return;
   if (!$('#lb').hidden){ closeLightbox(); try { history.pushState({r: 1}, ''); } catch (e) {} return; }
