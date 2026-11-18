@@ -1965,7 +1965,10 @@ async function ttsLoad(ci, off, frac, auto){
   if (off === null || off === undefined) off = Math.floor((frac || 0) * raw.length);
   const k = TT.sents.findIndex(x => x.s >= off - 1); TT.si = k < 0 ? TT.sents.length : k;
 }
-function ttsClear(){ const d = R.doc; if (!d) return; try { d.querySelectorAll('mark.a-tts').forEach(m => m.replaceWith(...m.childNodes)); } catch (e) {} }
+function ttsClear(){
+  const d = R.doc; if (!d) return;
+  try { const ps = new Set(); d.querySelectorAll('mark.a-tts').forEach(m => { ps.add(m.parentNode); m.replaceWith(...m.childNodes); }); ps.forEach(p => { try { p.normalize(); } catch (e) {} }); } catch (e) {}
+}
 async function ttsEnsure(ci, off){
   if (R.kind === 'pdf'){ if (P.cur !== ci){ TT.selfAt = Date.now(); pdfGoto(ci, 0); await tSleep(300); } return; }
   const has = R.doc && R.doc.querySelector('.a-ch[data-i="' + ci + '"]');
@@ -1997,8 +2000,8 @@ function ttsVoice(){
   const vs = ttsVoices(); const cur = vs.find(v => v.voiceURI === S.ttsVoice); if (cur) return cur;
   return vs.filter(v => !NOVELTY.test(v.name)).sort((a, b) => voiceQ(b) - voiceQ(a) || (b.default ? 1 : 0) - (a.default ? 1 : 0))[0] || vs[0] || null;
 }
-async function ttsSpeak(fresh, from){
-  const tok = ++TT.tok; from = from > 0 ? from : 0;
+async function ttsSpeak(fresh, from, reset){
+  const tok = ++TT.tok; from = from > 0 ? from : 0; TT.fly = null;
   if (TT.sleepAt && Date.now() >= TT.sleepAt){ ttsStop(); toast('sleep timer: stopped reading'); return; }
   let s = TT.sents[TT.si];
   while (!s){
@@ -2018,18 +2021,49 @@ async function ttsSpeak(fresh, from){
   if (v){ try { u.voice = v; } catch (e) {} u.lang = v.lang; }
   u.rate = Number(S.ttsRate) || 1;
   TT.bi = from;
-  u.onboundary = e => { if (tok === TT.tok && e.name !== 'sentence') TT.bi = from + (e.charIndex || 0); };
+  const fly = {t0: Date.now(), last: Date.now(), nb: 0, exp: Math.max(0, s.say.length - from) / ttsCps() + 2};
+  u.onstart = () => { if (tok === TT.tok) fly.last = Date.now(); };
+  u.onboundary = e => { if (tok !== TT.tok) return; fly.last = Date.now(); if (e.name !== 'sentence'){ fly.nb++; TT.bi = from + (e.charIndex || 0); } };
   u.onend = () => {
     if (tok !== TT.tok || TT.paused) return;
+    TT.fly = null; TT.recov = 0;
     const dur = (Date.now() - t0) / 1000, n = s.say.length - from;
     if (!from && dur > 1 && n > 15 && dur < 60){ const c = n / (dur * (Number(S.ttsRate) || 1)); TT.cps = TT.cps ? TT.cps * .7 + c * .3 : c; }
-    TT.si++; TT.bi = 0; ttsSpeak(false);
+    TT.si++; TT.bi = 0; TT.n = (TT.n || 0) + 1;
+    ttsSpeak(false, 0, TT.n % 60 === 0);          /* every so often start the voice engine afresh, since it degrades over a long session */
   };
-  u.onerror = e => { if (tok !== TT.tok || e.error === 'interrupted' || e.error === 'canceled') return; TT.paused = true; ttsRefresh(); toast('read aloud stopped'); };
-  TT.u = u;
-  if (fresh){ synth.cancel(); await tSleep(90); if (tok !== TT.tok) return; }
+  u.onerror = e => {
+    if (tok !== TT.tok || e.error === 'interrupted' || e.error === 'canceled') return;
+    if ((TT.recov || 0) < 3){ ttsUnstick(); return; }
+    TT.paused = true; ttsRefresh(); toast('read aloud stopped');
+  };
+  TT.u = u; TT.keep = [...(TT.keep || []).slice(-4), u];     /* hold on to recent utterances so none is collected before it reports back */
+  if (fresh || reset){ synth.cancel(); await tSleep(reset ? 250 : 90); if (tok !== TT.tok) return; }
+  fly.t0 = fly.last = Date.now(); TT.fly = fly;
   synth.speak(u);
 }
+/* the voice engine (iOS especially) can stall mid-session: no sound, and no "finished" event, until you pause and play.
+   This watches for that and does the same restart for you, picking up from the last word it reached. */
+async function ttsUnstick(){
+  if (TT.unst || !TT.on || TT.paused || NA.on) return;
+  TT.unst = true; TT.recov = (TT.recov || 0) + 1;
+  try {
+    const tok = ++TT.tok, from = TT.bi || 0; TT.fly = null;
+    try { synth.cancel(); } catch (e) {}
+    await tSleep(TT.recov > 1 ? 700 : 250); if (tok !== TT.tok || TT.paused) return;
+    try { synth.resume(); } catch (e) {}
+    ttsSpeak(true, from);
+  } finally { TT.unst = false; }
+}
+function ttsWatch(){
+  const f = TT.fly; if (!f || !TT.on || TT.paused || NA.on || TT.unst || !synth) return;
+  const now = Date.now(), since = now - f.t0, idle = now - f.last;
+  const quiet = f.nb > 2 && idle > 4000;                       /* was reporting words, then went silent */
+  const slow = since > f.exp * 1.8 + 5000;                      /* far longer than the sentence should take */
+  const dropped = (TT.recov || 0) < 2 && !synth.speaking && !synth.pending && since > 4500;   /* the engine lost it without saying so */
+  if (quiet || slow || dropped) ttsUnstick();
+}
+setInterval(ttsWatch, 1000);
 let kaAu = null;
 function msMusic(){
   try {
