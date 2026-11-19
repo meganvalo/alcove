@@ -2033,7 +2033,7 @@ function ttsBuild(tok, si, from){
   u.rate = Number(S.ttsRate) || 1;
   const last = ch.parts[ch.parts.length - 1], endS = TT.sents[last.i];
   const c = {tok, ch, u, from, cur: 0, active: false, nb: 0, marks: [], t0: 0, ts: 0, last: 0, lastB: 0, next: null, tm: 0, exp: ch.text.length / ttsCps() + 2,
-    open: !(endS.pb || (S.ttsClean !== 'off' && endS.pause)) && last.i + 1 < TT.sents.length};
+    open: !(S.ttsClean !== 'off' && endS.pause >= 700) && last.i + 1 < TT.sents.length};   /* only headings / scene breaks stop the queue; plain paragraph ends roll straight on */
   c.at = pos => {                                      /* move the highlight/position to where the voice has got to */
     if (!c.active) return;
     let k = c.cur; while (k + 1 < ch.parts.length && pos >= ch.parts[k + 1].off) k++;
@@ -2054,7 +2054,8 @@ function ttsBuild(tok, si, from){
     const dur = (Date.now() - (c.ts || c.t0)) / 1000, n = ch.text.length;
     if (!from && dur > 1 && n > 15 && dur < 120){ const k = n / (dur * (Number(S.ttsRate) || 1)); TT.cps = TT.cps ? TT.cps * .7 + k * .3 : k; }
     TT.si = last.i + 1; TT.bi = 0;
-    ttsLog('end', '#' + ch.parts[0].i + ' ' + dur.toFixed(1) + 's' + (c.next ? ' (next queued)' : ''));
+    if (n > 80) TT.bnd = c.nb >= 3; else if (c.nb >= 3) TT.bnd = true;       /* does this voice report word positions? */
+    ttsLog('end', '#' + ch.parts[0].i + ' ' + dur.toFixed(1) + 's words=' + c.nb + (c.next ? ' (next queued)' : ''));
     if (c.next) ttsActivate(c.next); else ttsSpeak(false, 0);
   };
   u.onerror = e => {
@@ -2121,12 +2122,14 @@ async function ttsUnstick(why){
   } finally { TT.unst = false; }
 }
 function ttsWatch(){
-  const f = TT.fly; if (!f || !TT.on || TT.paused || NA.on || TT.unst || !synth) return;
-  const now = Date.now(), since = now - f.t0, idle = now - f.last;
-  const quiet = f.nb > 2 && idle > 10000;                      /* was reporting words, then went silent for a long time */
-  const slow = since > f.exp * 2.5 + 10000;                     /* far longer than the text should take */
+  const f = TT.fly; if (!f || !TT.on || TT.paused || NA.on || TT.unst || !synth || synth.paused) return;
+  const now = Date.now(), since = now - f.t0, idle = now - f.last, expMs = f.exp * 1000;
+  /* a voice that reports words is silent if nothing arrives for 7s; one that doesn't gets a generous multiple of the expected time */
+  const quiet = TT.bnd === true && idle > 7000;
+  const slow = since > expMs * (TT.bnd === true ? 2.5 : 1.8) + 8000;
   const dropped = (TT.recov || 0) < 2 && !synth.speaking && !synth.pending && since > 6000;   /* the engine lost it without saying so */
-  if (quiet) ttsUnstick('silent ' + (idle / 1000 | 0) + 's'); else if (slow) ttsUnstick('too long ' + (since / 1000 | 0) + 's'); else if (dropped) ttsUnstick('dropped');
+  const st = ' (words=' + f.nb + ', ' + (since / 1000 | 0) + 's in)';
+  if (quiet) ttsUnstick('silent ' + (idle / 1000 | 0) + 's' + st); else if (slow) ttsUnstick('too long' + st); else if (dropped) ttsUnstick('dropped' + st);
 }
 setInterval(ttsWatch, 1000);
 let kaAu = null;
@@ -2176,10 +2179,11 @@ async function ttsStart(){
   TT.on = true; TT.paused = false; TT.sleepAt = TT.sleepAt || 0; kaStart();
   await ttsLoad(ci, off, R.frac); ttsRefresh(); ttsSpeak(true);
 }
-function ttsPause(){ if (NA.on){ naPause(); return; } kaStop(); TT.paused = true; TT.tok++; try { synth.cancel(); } catch (e) {} ttsRefresh(); }
+function ttsPause(){ if (NA.on){ naPause(); return; } ttsLog('user pause'); kaStop(); TT.paused = true; TT.tok++; try { synth.cancel(); } catch (e) {} ttsRefresh(); }
 function ttsStop(){ naHalt(); kaStop(); TT.on = false; TT.paused = true; TT.tok++; TT.sleepAt = 0; TT.sleepEnd = false; try { synth && synth.cancel(); } catch (e) {} ttsClear(); ttsRefresh(); }
-function ttsToggle(){ if (NA.on){ naToggle(); return; } if (!TT.on) ttsStart(); else if (TT.paused){ TT.paused = false; kaStart(); ttsSpeak(true); ttsRefresh(); } else ttsPause(); }
+function ttsToggle(){ if (NA.on){ naToggle(); return; } ttsLog('user ' + (!TT.on || TT.paused ? 'play' : 'pause')); if (!TT.on) ttsStart(); else if (TT.paused){ TT.paused = false; kaStart(); ttsSpeak(true); ttsRefresh(); } else ttsPause(); }
 function ttsStep(d){
+  ttsLog('user step ' + d);
   if (!TT.on){ ttsStart(); return; }
   TT.si = Math.max(0, Math.min(TT.sents.length, TT.si + d)); TT.paused = false; ttsSpeak(true);
 }
@@ -2192,6 +2196,7 @@ async function ttsChap(d){
   await ttsLoad(ci, 0, 0); TT.paused = false; kaStart(); ttsSpeak(true); ttsRefresh();
 }
 function ttsPara(d){
+  ttsLog('user para ' + d);
   if (!TT.on){ ttsStart(); return; }
   if (NA.on) return naPara(d);
   const st = i => i <= 0 || TT.sents[i - 1].pb; let i = TT.si;
@@ -2205,6 +2210,7 @@ function ttsPara(d){
 const ttsCps = () => (TT.cps || 14.5) * (Number(S.ttsRate) || 1);
 const ttsSecs = s => s.say.length / ttsCps() + (S.ttsClean !== 'off' && s.pause ? s.pause / 1000 / (Number(S.ttsRate) || 1) : 0);
 async function ttsSkip(sec){
+  ttsLog('user skip ' + sec);
   if (!TT.on){ ttsStart(); return; }
   if (NA.on) return naSkip(sec);
   const tok0 = TT.tok, playing = !TT.paused;
@@ -2232,6 +2238,7 @@ async function ttsSkip(sec){
   if (playing){ TT.paused = false; ttsSpeak(true); } else ttsRefresh();
 }
 function ttsSetRate(r){
+  ttsLog('user rate ' + r);
   if (naUsable()){ S.naRate = r; saveSettings(); try { if (NA.au) NA.au.playbackRate = r; } catch (e) {} naPos(); ttsRefresh(); return; }
   S.ttsRate = r; saveSettings(); if (TT.on && !TT.paused) ttsSpeak(true); ttsRefresh(); }
 function ttsSetSleep(v){ TT.sleepEnd = v === 'end'; TT.sleepCi = TT.ci; TT.sleepMin = Number(v) || 0; TT.sleepAt = TT.sleepMin ? Date.now() + TT.sleepMin * 60000 : 0; ttsRefresh(); }
