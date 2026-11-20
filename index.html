@@ -2011,9 +2011,9 @@ function ttsVoice(){
 const CHUNK = 420;
 /* small rolling log of what the voice engine did, so a stutter can be traced (listen sheet -> "voice log") */
 function ttsLog(ev, info){
-  try { const L = TT.log || (TT.log = []); L.push(new Date().toISOString().slice(11, 23) + ' ' + ev + (info ? ' ' + info : '')); if (L.length > 300) L.splice(0, L.length - 300); } catch (e) {}
+  try { const L = TT.log || (TT.log = []); L.push(new Date().toISOString().slice(11, 23) + ' ' + ev + (info ? ' ' + info : '')); if (L.length > 600) L.splice(0, L.length - 600); } catch (e) {}
 }
-function ttsLogSave(){ try { localStorage.setItem('alcove.ttslog', (TT.log || []).slice(-150).join('\n')); } catch (e) {} }
+function ttsLogSave(){ try { localStorage.setItem('alcove.ttslog', (TT.log || []).slice(-300).join('\n')); } catch (e) {} }
 function ttsChunk(si, from){
   const parts = []; let text = '';
   for (let i = si; i < TT.sents.length; i++){
@@ -2035,21 +2035,22 @@ function ttsBuild(tok, si, from){
   const c = {tok, ch, u, from, cur: 0, active: false, nb: 0, marks: [], t0: 0, ts: 0, last: 0, lastB: 0, next: null, tm: 0, exp: ch.text.length / ttsCps() + 2,
     open: !(S.ttsClean !== 'off' && endS.pause >= 700) && last.i + 1 < TT.sents.length};   /* only headings / scene breaks stop the queue; plain paragraph ends roll straight on */
   c.at = pos => {                                      /* move the highlight/position to where the voice has got to */
-    if (!c.active) return;
+    if (!c.active || c.dead) return;
     let k = c.cur; while (k + 1 < ch.parts.length && pos >= ch.parts[k + 1].off) k++;
     const p = ch.parts[k]; TT.bi = p.base + Math.max(0, pos - p.off);
-    if (k > c.cur){ c.cur = k; TT.si = p.i; const s2 = TT.sents[p.i]; if (s2){ ttsShow(s2); actAt = Date.now(); ttsRefresh(); } }
+    if (k > c.cur){ c.cur = k; TT.si = p.i; const s2 = TT.sents[p.i]; if (s2 && !document.hidden){ ttsShow(s2); actAt = Date.now(); ttsRefresh(); } }
   };
-  u.onstart = () => { if (tok !== TT.tok) return; c.last = c.ts = Date.now(); ttsLog('start', '#' + ch.parts[0].i + ' len ' + ch.text.length); ttsQueue(c); };
+  u.onstart = () => { if (tok !== TT.tok || c.dead) return; if (!c.active) ttsActivate(c); c.last = c.ts = Date.now(); ttsLog('start', '#' + ch.parts[0].i + ' len ' + ch.text.length); ttsQueue(c); };
   u.onboundary = e => {
-    if (tok !== TT.tok || !c.active || e.name === 'sentence') return;
+    if (tok !== TT.tok || c.dead || e.name === 'sentence') return;
+    if (!c.active) ttsActivate(c);
     const now = c.last = c.lastB = Date.now(), pos = e.charIndex || 0;
     c.nb++; c.marks.push([now, pos]); if (c.marks.length > 60) c.marks.shift();
     c.at(pos); ttsQueue(c);
   };
   u.onend = () => {
     clearInterval(c.tm);
-    if (tok !== TT.tok || TT.paused) return;
+    if (tok !== TT.tok || TT.paused || c.dead) return;
     if (TT.fly === c) TT.fly = null; TT.recov = 0;
     const dur = (Date.now() - (c.ts || c.t0)) / 1000, n = ch.text.length;
     if (!from && dur > 1 && n > 15 && dur < 120){ const k = n / (dur * (Number(S.ttsRate) || 1)); TT.cps = TT.cps ? TT.cps * .7 + k * .3 : k; }
@@ -2070,20 +2071,31 @@ function ttsBuild(tok, si, from){
 }
 function ttsActivate(c, show){
   if (c.active || c.tok !== TT.tok) return; c.active = true;
+  const o = TT.fly; if (o && o !== c){ o.dead = true; clearInterval(o.tm); }       /* an earlier chunk's late events must not move us back */
+  TT.aheadChars = Math.max(0, (TT.aheadChars || 0) - c.ch.text.length);
   const now = Date.now(); c.t0 = c.last = c.ts = now; TT.fly = c;
   const p = c.ch.parts[0]; TT.si = p.i; TT.bi = c.from;
-  if (show !== false){ const s = TT.sents[p.i]; if (s){ ttsShow(s); actAt = now; ttsRefresh(); } }
+  if (show !== false && !document.hidden){ const s = TT.sents[p.i]; if (s){ ttsShow(s); actAt = now; ttsRefresh(); } }
   if (c.ch.parts.length > 1) c.tm = setInterval(() => {      /* timer fallback while no word events are arriving */
-    if (c.tok !== TT.tok || TT.paused){ clearInterval(c.tm); return; }
+    if (c.tok !== TT.tok || TT.paused || c.dead){ clearInterval(c.tm); return; }
     const t = Date.now(); if (t - c.lastB < 1500) return;
     c.at(Math.min(c.ch.text.length - 1, (t - c.ts) / 1000 * ttsCps()));
   }, 250);
 }
+/* keep the engine's own queue stocked. In the app: one chunk ahead. Away from the app (JS may be frozen by iOS):
+   several minutes of reading, so the voice keeps going on its own whatever the page is doing. */
 function ttsQueue(c){
-  if (c.next || !c.open || c.tok !== TT.tok || TT.paused || !TT.on || !synth) return;
-  if (TT.sleepAt && Date.now() + 30000 >= TT.sleepAt) return;   /* near a sleep timer: let ttsSpeak decide at the chunk's end */
-  const last = c.ch.parts[c.ch.parts.length - 1];
-  try { const nx = ttsBuild(c.tok, last.i + 1, 0); c.next = nx; ttsLog('queue', '#' + (last.i + 1) + ' len ' + nx.ch.text.length); synth.speak(nx.u); } catch (e) { c.next = null; }
+  if (!TT.on || TT.paused || !synth || c.tok !== TT.tok || c.dead) return;
+  const budget = document.hidden ? 6000 : 1;
+  let allow = Infinity; if (TT.sleepAt) allow = Math.max(0, (TT.sleepAt - Date.now()) / 1000 * ttsCps() - 400);   /* never queue past a sleep timer */
+  let t = TT.tail && TT.tail.tok === c.tok && !TT.tail.dead ? TT.tail : c;
+  while (t.open && (TT.aheadChars || 0) < budget && (TT.aheadChars || 0) < allow){
+    const last = t.ch.parts[t.ch.parts.length - 1];
+    try {
+      const nx = ttsBuild(c.tok, last.i + 1, 0); t.next = nx; TT.tail = nx; TT.aheadChars = (TT.aheadChars || 0) + nx.ch.text.length;
+      ttsLog('queue', '#' + (last.i + 1) + ' len ' + nx.ch.text.length + (document.hidden ? ' (away)' : '')); synth.speak(nx.u); t = nx;
+    } catch (e) { t.next = null; break; }
+  }
 }
 async function ttsSpeak(fresh, from, reset){
   const tok = ++TT.tok; from = from > 0 ? from : 0; TT.fly = null;
@@ -2102,7 +2114,7 @@ async function ttsSpeak(fresh, from, reset){
   await ttsEnsure(TT.ci, s.s); if (tok !== TT.tok) return;
   ttsShow(s); actAt = Date.now(); ttsRefresh();
   if (from >= s.say.length) from = 0;
-  const c = ttsBuild(tok, TT.si, from);
+  const c = ttsBuild(tok, TT.si, from); TT.tail = c; TT.aheadChars = 0;
   if (fresh || reset){ synth.cancel(); await tSleep(reset ? 250 : 90); if (tok !== TT.tok) return; }
   ttsLog('speak', (fresh ? 'fresh ' : '') + '#' + TT.si + ' len ' + c.ch.text.length);
   ttsActivate(c, false); synth.speak(c.u);
@@ -2122,7 +2134,8 @@ async function ttsUnstick(why){
   } finally { TT.unst = false; }
 }
 function ttsWatch(){
-  const f = TT.fly; if (!f || !TT.on || TT.paused || NA.on || TT.unst || !synth || synth.paused) return;
+  const f = TT.fly; if (!f || !TT.on || TT.paused || NA.on || TT.unst || !synth || synth.paused || document.hidden) return;
+  if (Date.now() < (TT.grace || 0)){ f.last = Math.max(f.last, Date.now() - 1000); return; }     /* just came back: let delayed events arrive first */
   const now = Date.now(), since = now - f.t0, idle = now - f.last, expMs = f.exp * 1000;
   /* a voice that reports words is silent if nothing arrives for 7s; one that doesn't gets a generous multiple of the expected time */
   const quiet = TT.bnd === true && idle > 7000;
@@ -2155,6 +2168,7 @@ function kaStart(){
       v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, i % 2 ? 1 : -1, true);
       kaAu = new Audio(URL.createObjectURL(new Blob([buf], {type: 'audio/wav'}))); kaAu.loop = true;
+      kaAu.addEventListener('pause', () => { if (ttsAlive() && S.ttsBg !== 'off'){ ttsLog('keepalive paused by system'); setTimeout(kaEnsure, 300); } });
     }
     kaAu.play().catch(() => {});
     const ms = navigator.mediaSession, m = R.meta || {};
@@ -2165,6 +2179,20 @@ function kaStart(){
     try { ms.setActionHandler('seekbackward', () => ttsSkip(-10)); ms.setActionHandler('seekforward', () => ttsSkip(10)); } catch (e) {}
   } catch (e) {}
 }
+/* leaving / returning to the app: log it, stock the engine's queue, make sure the keep-alive sound is still running */
+function ttsAlive(){ return TT.on && !TT.paused && !NA.on; }
+function kaEnsure(){ try { if (ttsAlive() && S.ttsBg !== 'off' && kaAu && kaAu.paused){ ttsLog('keepalive was paused: restarting'); kaAu.play().catch(() => {}); } } catch (e) {} }
+document.addEventListener('visibilitychange', () => {
+  if (!ttsAlive()) return;
+  TT.grace = Date.now() + 8000;
+  ttsLog(document.hidden ? 'AWAY' : 'BACK', 'speaking=' + (synth && synth.speaking) + ' pending=' + (synth && synth.pending) + ' keepalive=' + (kaAu ? (kaAu.paused ? 'paused' : 'playing') : 'none') + ' ahead=' + (TT.aheadChars || 0));
+  kaEnsure();
+  if (document.hidden && TT.fly) ttsQueue(TT.fly);
+  ttsLogSave();
+});
+document.addEventListener('freeze', () => { ttsLog('page FROZEN by the system'); ttsLogSave(); });
+document.addEventListener('resume', () => { ttsLog('page resumed'); });
+setInterval(() => { if (!ttsAlive()) return; kaEnsure(); if (TT.fly && document.hidden) ttsQueue(TT.fly); if (Date.now() - (TT.hb || 0) > 30000){ TT.hb = Date.now(); ttsLog('hb', (document.hidden ? 'away ' : 'here ') + 'speaking=' + (synth && synth.speaking) + ' #' + TT.si); } }, 5000);
 function kaStop(){ try { kaAu && kaAu.pause(); } catch (e) {} msMusic(); if ($('#lm').hidden) wakeOff(); }
 function ttsUnlock(){
   if (TT.unlocked || !synth) return; TT.unlocked = true;
@@ -2248,7 +2276,7 @@ function ttsCmd(c){
   else if (c === 'back10') ttsSkip(-10); else if (c === 'fwd10') ttsSkip(10);
 }
 function ttsLogCopy(){
-  const txt = ((TT.log && TT.log.length ? TT.log : (localStorage.getItem('alcove.ttslog') || '').split('\n')).slice(-150).join('\n')) || '(empty)', tip = $('#tLogTip');
+  const txt = ((TT.log && TT.log.length ? TT.log : (localStorage.getItem('alcove.ttslog') || '').split('\n')).slice(-300).join('\n')) || '(empty)', tip = $('#tLogTip');
   const done = m => { if (tip) tip.textContent = m; toast(m); };
   try { navigator.clipboard.writeText(txt).then(() => done('log copied'), () => { if (tip) tip.textContent = txt; }); } catch (e) { if (tip) tip.textContent = txt; }
 }
