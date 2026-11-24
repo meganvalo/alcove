@@ -9,6 +9,8 @@ It's built mainly for iPhone and iPad (Safari), but works in any modern browser.
 **Library**
 - Import EPUB and PDF files from your device (multiple at once)
 - Cover grid with reading progress, search, rename (title and author) and delete
+- Sort by recently read, recently added, title or author
+- Folders (with a sidebar) to organize your shelf
 - Reading dates for every book: when you started it, when you last read it, and when you finished it (set automatically, and editable from the book's details)
 - Opens the last book you were reading, right where you left off
 
@@ -18,7 +20,10 @@ It's built mainly for iPhone and iPad (Safari), but works in any modern browser.
 - Table of contents, a progress slider, and a "back to where you were" button after following footnotes or links
 - Bookmarks and highlights (four colors) with a list of each per book
 - Tap an image to view it full screen, with pinch and double-tap zoom
-- Settings: text size, serif or sans, theme (black, graphite, light, auto), margins, line spacing
+- **Search inside a book** (EPUB and PDF)
+- Look up a word from the selection bar (see Your data and privacy: this one needs the network)
+- Settings: text size, serif or sans, justified or left alignment, hyphenation, margins, line spacing, screen dimming, and nine themes (linen, cotton, olive harvest, golden batter, toasted caramel, spiced wine, cowhide cocoa, graphite, black) plus auto (follows the device's light/dark setting)
+- Per-book reading settings: a book can remember its own layout and text settings
 
 **Reading PDFs**
 - Continuous scroll with pinch and double-tap zoom
@@ -34,6 +39,18 @@ It's built mainly for iPhone and iPad (Safari), but works in any modern browser.
 - **Move highlight** nudges the text by 1 or 5 sentences if it drifts from the voice, and the fix stays from that point on
 - A player bar like the Kindle app's sits at the bottom of the reader (with an audiobook or the device voice; settings, **audio bar**: always, when playing, or hidden): play or pause, back 30 seconds, speed (tap to cycle), and time left in the book. Tap the bar to open the full controls
 - Switch between the audiobook and the device voice at any time
+
+**Read aloud and ambient music**
+- Read aloud with the device voice, with a sleep timer and listening mode
+- Add your own songs to play softly in the background while you read (shuffle, repeat, sleep timer). Songs are stored on the device and aren't included in backups
+
+**Reading stats**
+- Reading time per day, a streak, and an estimate of the time left in the book, based on your own reading speed
+
+**Backup and restore**
+- Make a full backup (books, reading positions, bookmarks, highlights, dates and settings) as one `.alcove` file, or share just your notes
+- Restore on a new device, merge a notes file, or replace the shelf with a backup
+- A backup reminder (every 2 weeks, monthly or every 2 months) and a storage-protection indicator
 
 **Other**
 - Works offline once loaded
@@ -59,10 +76,13 @@ Notes:
 You need a free GitHub account.
 
 1. **Create a repository** (for example `alcove`).
-2. **Upload these three files** to the root of the repo:
+2. **Upload these files** to the root of the repo:
    - `index.html`
    - `sw.js`
-   - `icon.png`
+   - `manifest.json`
+   - `icon.png`, `icon-180.png`, `icon-192.png`, `icon-512.png`
+
+   (`icon.svg` and the `splash/` folder are optional source and artwork files.)
 3. In the repo go to **Settings → Pages**. Under **Build and deployment**, set **Source** to "Deploy from a branch", choose the `main` branch and the `/ (root)` folder, then save.
 4. After a minute or two your site is live at `https://YOUR-USERNAME.github.io/REPO-NAME/`.
 
@@ -106,18 +126,21 @@ Right arrow or space: next page. Left arrow: previous page. Escape: close panels
 
 - Books, audiobooks, covers, reading positions, dates, bookmarks and highlights are stored in your browser's local storage (IndexedDB) on that device. Nothing is uploaded anywhere.
 - There are no accounts, no analytics and no tracking.
-- The only network request the app makes beyond loading its own files is for **PDF support**: the first time you add or open a PDF it downloads [PDF.js](https://mozilla.github.io/pdf.js/) from the cdnjs CDN. It's cached afterwards, so PDFs then work offline.
+- The app makes only two kinds of network request beyond loading its own files:
+  - **PDF support:** the first time you add or open a PDF it downloads [PDF.js](https://mozilla.github.io/pdf.js/) from the cdnjs CDN. It's cached afterwards, so PDFs then work offline.
+  - **Word lookup:** if you use the dictionary on a selected word, that word is sent to [dictionaryapi.dev](https://dictionaryapi.dev/). Nothing else is sent, and nothing is looked up unless you ask.
 - **Nothing syncs between devices.** If you clear website data, delete the Home Screen app, or iOS clears storage for an unused site, your library goes with it. Keep your original book files.
 
 ## Limitations
 
 - Narration highlighting is an estimate, not a word-by-word alignment. Inside a chapter the time is spread over the text by length, so it is usually within a sentence or two and the **move highlight** buttons fix the rest. Audiobooks that differ a lot from the EPUB (abridged, different edition) will drift more.
 - Narration needs one audio file per book (no folders of mp3 chapters yet) and an EPUB, not a PDF.
-- The audiobook file and its sync fixes are not included in backups. Keep the original audio file and add it again on a new device.
+- The audiobook file and its sync fixes are not included in backups, and neither are your ambient music songs. Keep the original files and add them again on a new device.
 
 - No DRM support. Copy-protected EPUBs (for example from Kindle or Kobo stores) won't open.
 - Highlights work in EPUBs only, not PDFs.
-- No search inside a book yet.
+- Dictionary lookup needs an internet connection and is English only.
+- Search inside a book works for EPUBs and PDFs, but only finds exact text (no fuzzy matching).
 - EPUBs are shown with alcove.'s own typography. The publisher's styling is intentionally stripped (this keeps themes consistent), so some books lose special formatting. Fixed-layout EPUBs (such as some comics and picture books) aren't specially handled.
 - Scripts and interactive content inside EPUBs are removed for safety.
 - Light mode uses a black strip behind the iOS status bar, because iOS fixes the clock and battery text to white for web apps like this.
@@ -136,16 +159,17 @@ A single `index.html` of plain HTML, CSS and JavaScript, with no build step and 
 
 - Reads EPUB files with a small built-in ZIP reader (uses the browser's `DecompressionStream`)
 - Stores everything in IndexedDB
-- `sw.js` is a small service worker that makes the app load offline
+- `sw.js` is a small service worker that makes the app load offline (network first, so updates show up, with the cache as a fallback)
+- `manifest.json` makes it installable (name, icons, file handlers)
 - PDF rendering uses PDF.js, loaded on demand
 
 To customize it, edit `index.html` directly. Colors live in the `body[data-theme=...]` rules at the top of the stylesheet.
 
 ## Credits
 
-- Title font: **Chrysanthi Unicode**, a freeware font from [FontSpace](https://www.fontspace.com/chrysanthi-unicode-font-f13315). It's embedded in the file, trimmed to Latin characters to keep the app small. Check its license on FontSpace if you plan to redistribute your own copy.
+- Title font: **Oblata Display** by Astrid Schäfer, under the SIL Open Font License 1.1. It's embedded in `index.html` so it works offline.
 - PDF support: [PDF.js](https://github.com/mozilla/pdf.js) by Mozilla, Apache License 2.0, loaded from cdnjs at runtime.
 
 ## License
 
-Add the license of your choice here (MIT is a common option for projects like this).
+Apache License 2.0. See [LICENSE](LICENSE).
